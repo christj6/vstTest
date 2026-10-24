@@ -10,6 +10,7 @@ namespace boringsynth
 constexpr const char* volumeId = "volume";
 constexpr const char* velocitySensitivityId = "velocitySensitivity";
 constexpr const char* pitchBendRangeId = "pitchBendRange";
+constexpr const char* waveformId = "waveform";
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";
 

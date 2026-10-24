@@ -13,6 +13,9 @@ constexpr float level = 0.1f;
 // this smooths them out while still feeling immediate.
 constexpr double bendSmoothingSeconds = 0.01;
 
+// How long a change of waveform during a note takes to fade from the old waveform to the new one.
+constexpr double waveformCrossfadeSeconds = 0.01;
+
 // A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
 // sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
 // about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
@@ -32,9 +35,10 @@ float pitchWheelToBend (int wheelValue)
 
 } // namespace
 
-SynthVoice::SynthVoice (const BandLimitedWaveTable& waveTable, const VoiceParameters& voiceParameters)
-    : parameters (voiceParameters),
-      oscillator (waveTable)
+SynthVoice::SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters)
+    : tables (waveformTables),
+      parameters (voiceParameters),
+      oscillator (waveformTables.get (0))
 {
 }
 
@@ -56,6 +60,7 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     }
 
     oscillator.reset();
+    oscillator.setTable (getCurrentTable(), 0);
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
     gain = 1.0f;
@@ -92,6 +97,9 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // Picks up both wheel moves and changes to the bend range; either way the pitch glides.
     frequencyRatio.setTargetValue (getBendRatio());
 
+    // A change of waveform during the note fades in rather than switching abruptly.
+    oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
+
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
         const auto sample = gain * noteLevel * oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
@@ -113,6 +121,11 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
 double SynthVoice::getBendRatio() const
 {
     return std::exp2 (bendPosition * parameters.pitchBendRange.load() / 12.0);
+}
+
+const BandLimitedWaveTable& SynthVoice::getCurrentTable() const
+{
+    return tables.get (juce::roundToInt (parameters.waveform.load()));
 }
 
 } // namespace boringsynth

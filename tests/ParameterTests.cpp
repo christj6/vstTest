@@ -69,12 +69,37 @@ void testPitchBendRangeParameter()
     check (std::abs (range->convertFrom0to1 (1.0f) - 24.0f) < 0.01f, "pitch bend range goes up to 24 semitones");
 }
 
+void testWaveformParameter()
+{
+    auto processor = createProcessor();
+    auto* waveform = findParameter (*processor, "waveform");
+
+    // Spelled out on purpose, like 'volume' above.
+    check (waveform != nullptr, "parameter ID 'waveform' exists");
+
+    if (waveform == nullptr)
+        return;
+
+    check (std::abs (getParameter (*processor, "waveform")) < 0.01f, "the waveform defaults to the first choice");
+
+    // A DAW saves the choice by position, so the list must keep this order forever. New waveforms
+    // can only be added to the end.
+    const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square" };
+    bool inOrder = true;
+
+    for (int i = 0; i < expected.size(); ++i)
+        inOrder = inOrder && waveform->getText (waveform->convertTo0to1 ((float) i), 20) == expected[i];
+
+    check (inOrder, "the waveform choices are Sine, Triangle, Saw and Square, in that order");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
     setParameter (*original, "volume", -12.0f);
     setParameter (*original, "velocitySensitivity", 75.0f);
     setParameter (*original, "pitchBendRange", 7.0f);
+    setParameter (*original, "waveform", 2.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -91,6 +116,7 @@ void testStateRoundTrip()
     check (std::abs (restoredVolume - (-12.0f)) < 0.01f, "volume survives saving and reloading");
     check (std::abs (restoredSensitivity - 75.0f) < 0.01f, "velocity sensitivity survives saving and reloading");
     check (std::abs (restoredRange - 7.0f) < 0.01f, "pitch bend range survives saving and reloading");
+    check (std::abs (getParameter (*restored, "waveform") - 2.0f) < 0.01f, "the waveform choice (Saw) survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -104,6 +130,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "volume", -12.0f);
     setParameter (*original, "velocitySensitivity", 75.0f);
     setParameter (*original, "pitchBendRange", 7.0f);
+    setParameter (*original, "waveform", 2.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -115,7 +142,7 @@ void testStateFromOlderVersions()
         return;
     }
 
-    for (auto* id : { "velocitySensitivity", "pitchBendRange" })
+    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -131,6 +158,8 @@ void testStateFromOlderVersions()
            "an older project loads with velocity sensitivity at 0 % (velocity ignored, as before)");
     check (std::abs (getParameter (*loaded, "pitchBendRange") - 2.0f) < 0.01f,
            "an older project loads with the default pitch bend range of 2 semitones");
+    check (std::abs (getParameter (*loaded, "waveform")) < 0.01f,
+           "an older project loads with the sine, its only waveform back then");
 }
 
 void testOldAndInvalidState()
@@ -161,6 +190,7 @@ void runParameterTests()
     testVolumeText();
     testVelocitySensitivityParameter();
     testPitchBendRangeParameter();
+    testWaveformParameter();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();

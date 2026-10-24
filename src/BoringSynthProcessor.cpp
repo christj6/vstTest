@@ -32,10 +32,10 @@ void protectOutput (juce::AudioBuffer<float>& buffer)
 BoringSynthProcessor::BoringSynthProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
-    const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange };
+    const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform };
 
     for (int i = 0; i < numVoices; ++i)
-        synth.addVoice (new SynthVoice (sineTable, voiceParameters));
+        synth.addVoice (new SynthVoice (waveformTables, voiceParameters));
 
     synth.addSound (new SynthSound());
 

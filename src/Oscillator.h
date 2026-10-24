@@ -12,8 +12,22 @@ namespace boringsynth
 class Oscillator
 {
 public:
-    // The table must outlive the oscillator. It's shared, so the oscillator never changes it.
-    explicit Oscillator (const BandLimitedWaveTable& waveTable) : table (waveTable) {}
+    // Tables must outlive the oscillator. They're shared, so the oscillator never changes them.
+    explicit Oscillator (const BandLimitedWaveTable& waveTable) : table (&waveTable) {}
+
+    // Switches to another waveform. With crossfadeSamples of 0 it switches at once, which is right
+    // when a note starts. Otherwise it fades from the old waveform to the new one over that many
+    // samples, reading both at the same phase, so a change during a note doesn't click.
+    void setTable (const BandLimitedWaveTable& newTable, int crossfadeSamples) noexcept
+    {
+        if (&newTable == table)
+            return;
+
+        previousTable = crossfadeSamples > 0 ? table : nullptr;
+        table = &newTable;
+        fadeLength = crossfadeSamples;
+        fadeRemaining = crossfadeSamples;
+    }
 
     // Starts the wave again from the beginning of its cycle.
     void reset() noexcept { phase = 0.0; }
@@ -30,7 +44,23 @@ public:
         if (phaseDelta >= juce::MathConstants<double>::pi)
             return 0.0f;
 
-        const auto sample = table.getTableFor (phaseDelta).getSample (phase);
+        auto sample = table->getTableFor (phaseDelta).getSample (phase);
+
+        if (previousTable != nullptr)
+        {
+            // Counted in whole samples, so the fade ends on exactly its last sample.
+            if (--fadeRemaining <= 0)
+            {
+                previousTable = nullptr;
+            }
+            else
+            {
+                const auto progress = (float) (fadeLength - fadeRemaining) / (float) fadeLength;
+                const auto previousSample = previousTable->getTableFor (phaseDelta).getSample (phase);
+                sample = previousSample + progress * (sample - previousSample);
+            }
+        }
+
         phase += phaseDelta;
 
         if (phase >= juce::MathConstants<double>::twoPi)
@@ -40,7 +70,10 @@ public:
     }
 
 private:
-    const BandLimitedWaveTable& table;
+    const BandLimitedWaveTable* table;
+    const BandLimitedWaveTable* previousTable = nullptr; // the waveform being faded out, if any
+    int fadeLength = 0;    // samples the current crossfade lasts
+    int fadeRemaining = 0; // samples of it still to go
     double phase = 0.0;
 };
 

@@ -2,14 +2,14 @@
 
 #include "Parameters.h"
 #include "Synth.h"
-#include "BandLimitedWaveTable.h"
+#include "Waveforms.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-// A synth that does nothing but play a sine wave at the pitch of each held key.
-// No envelope and no editor: note on starts the sine, note off stops it (with a 5 ms fade so the
+// A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key.
+// No envelope and no editor: note on starts the note, note off stops it (with a 5 ms fade so the
 // cut doesn't click). The pitch wheel bends notes and the sustain pedal holds them. The parameters
-// are the output volume, velocity sensitivity and pitch bend range.
+// are the output volume, velocity sensitivity, pitch bend range and waveform.
 
 namespace boringsynth
 {
@@ -45,13 +45,14 @@ public:
 
 private:
     // Declared before the synth, so it outlives the voices that read it.
-    BandLimitedWaveTable sineTable { [] (double phase) { return (float) std::sin (phase); } };
+    WaveformTables waveformTables;
 
     Synth synth;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
     std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);
+    std::atomic<float>* waveform = parameters.getRawParameterValue (waveformId);
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

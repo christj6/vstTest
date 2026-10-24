@@ -1,5 +1,7 @@
 #include "Parameters.h"
 
+#include "Waveforms.h"
+
 namespace boringsynth
 {
 
@@ -44,6 +46,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                            maxPitchBendRange,
                                                            defaultPitchBendRange,
                                                            juce::AudioParameterIntAttributes().withLabel ("semitones")));
+
+    // Sine, the plug-in's only waveform before this existed. The choices are saved by position, so
+    // waveformNames' order is permanent.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { waveformId, 1 },
+                                                              "Waveform",
+                                                              waveformNames,
+                                                              0));
 
     return layout;
 }

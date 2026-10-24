@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Oscillator.h"
+#include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -20,6 +21,7 @@ struct VoiceParameters
 {
     const std::atomic<float>& velocitySensitivity; // 0 to 100 %, read when each note starts
     const std::atomic<float>& pitchBendRange;      // semitones, read on every block
+    const std::atomic<float>& waveform;            // position in waveformNames, read on every block
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
@@ -30,9 +32,9 @@ public:
     // Length of the fade-out on note off. Short enough to sound instant, long enough not to click.
     static constexpr double releaseSeconds = 0.005;
 
-    // waveTable is the waveform the voice plays. The table and the parameter values must outlive
-    // the voice; the struct itself is copied.
-    SynthVoice (const BandLimitedWaveTable& waveTable, const VoiceParameters& voiceParameters);
+    // waveformTables holds every waveform the voice can play. The tables and the parameter values
+    // must outlive the voice; the struct itself is copied.
+    SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;
     void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;
@@ -42,6 +44,7 @@ public:
     void renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples) override;
 
 private:
+    const WaveformTables& tables;
     VoiceParameters parameters;
     Oscillator oscillator;
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
@@ -54,6 +57,7 @@ private:
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
 
     double getBendRatio() const;
+    const BandLimitedWaveTable& getCurrentTable() const;
 };
 
 } // namespace boringsynth

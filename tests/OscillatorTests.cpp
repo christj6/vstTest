@@ -1,6 +1,7 @@
 #include "TestHelpers.h"
 
 #include "Oscillator.h"
+#include "Waveforms.h"
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -191,44 +192,55 @@ void testLevelSelection()
     check (wrongChoices == 0, "each pitch reads the richest level that doesn't alias");
 }
 
+// For the aliasing tests: a note at about 5 kHz (48 kHz sample rate), whose harmonics below Nyquist
+// are at 5, 10, 15 and 20 kHz. Without band-limiting, its higher harmonics fold back to unrelated
+// frequencies.
+//
+// The pitch is chosen so exactly 427 cycles fit in 4096 samples: every real harmonic then lands on
+// a multiple of FFT bin 427, and anything elsewhere in the spectrum is aliasing (or noise).
+constexpr int aliasTestLength = 4096;
+constexpr int aliasTestCycles = 427;
+const double aliasTestPhaseDelta = juce::MathConstants<double>::twoPi * aliasTestCycles / aliasTestLength;
+
+// The loudest frequency in `output` that isn't a harmonic of the note, in dB relative to the note.
+double loudestAlias (const std::vector<float>& output)
+{
+    const auto harmonics = harmonicsOf (output);
+    double loudest = 0.0;
+
+    for (size_t k = 1; k < harmonics.size(); ++k)
+        if (k % aliasTestCycles != 0)
+            loudest = std::max (loudest, harmonics[k]);
+
+    return toDecibels (loudest / harmonics[aliasTestCycles]);
+}
+
+// The aliasing test note played by an oscillator.
+std::vector<float> playAliasTestNote (const boringsynth::BandLimitedWaveTable& table)
+{
+    boringsynth::Oscillator oscillator (table);
+    std::vector<float> output (aliasTestLength);
+
+    for (auto& sample : output)
+        sample = oscillator.getNextSample (aliasTestPhaseDelta);
+
+    return output;
+}
+
 void testNoAliasing()
 {
-    // A sawtooth at about 5 kHz (48 kHz sample rate) has harmonics at 5, 10, 15 and 20 kHz below
-    // Nyquist. Without band-limiting, its higher harmonics fold back to unrelated frequencies.
-    //
-    // The pitch is chosen so exactly 427 cycles fit in 4096 samples: every real harmonic then lands
-    // on a multiple of FFT bin 427, and anything elsewhere in the spectrum is aliasing (or noise).
-    constexpr int fftSize = 4096;
-    constexpr int cyclesPerFft = 427;
-    const auto phaseDelta = juce::MathConstants<double>::twoPi * cyclesPerFft / fftSize;
-
-    auto worstAlias = [] (const std::vector<float>& output)
-    {
-        const auto harmonics = harmonicsOf (output);
-        double worst = 0.0;
-
-        for (size_t k = 1; k < harmonics.size(); ++k)
-            if (k % cyclesPerFft != 0)
-                worst = std::max (worst, harmonics[k]);
-
-        return toDecibels (worst / harmonics[cyclesPerFft]);
-    };
-
-    boringsynth::Oscillator oscillator (bandLimitedSawtooth());
-    std::vector<float> bandLimited (fftSize), unlimited (fftSize);
+    // The same note read from level 0, which keeps every harmonic, for comparison.
+    std::vector<float> unlimited (aliasTestLength);
     double phase = 0.0;
 
-    for (size_t i = 0; i < fftSize; ++i)
+    for (auto& sample : unlimited)
     {
-        bandLimited[i] = oscillator.getNextSample (phaseDelta);
-
-        // The same note read from level 0, which keeps every harmonic, for comparison.
-        unlimited[i] = bandLimitedSawtooth().getLevel (0).getSample (phase);
-        phase = std::fmod (phase + phaseDelta, juce::MathConstants<double>::twoPi);
+        sample = bandLimitedSawtooth().getLevel (0).getSample (phase);
+        phase = std::fmod (phase + aliasTestPhaseDelta, juce::MathConstants<double>::twoPi);
     }
 
-    const auto bandLimitedAlias = worstAlias (bandLimited);
-    const auto unlimitedAlias = worstAlias (unlimited);
+    const auto bandLimitedAlias = loudestAlias (playAliasTestNote (bandLimitedSawtooth()));
+    const auto unlimitedAlias = loudestAlias (unlimited);
     std::printf ("      5 kHz sawtooth: loudest alias %.1f dB below the fundamental band-limited, "
                  "%.1f dB without band-limiting\n", -bandLimitedAlias, -unlimitedAlias);
     check (bandLimitedAlias < -80.0, "a high sawtooth note has no audible aliasing");
@@ -280,6 +292,138 @@ void testOscillatorAtNyquist()
     check (steady.getNextSample (0.1) == interrupted.getNextSample (0.1), "its phase holds still while it's silent");
 }
 
+//==============================================================================
+const boringsynth::WaveformTables& waveformTables()
+{
+    static const boringsynth::WaveformTables tables;
+    return tables;
+}
+
+const char* waveformName (int waveform)
+{
+    return boringsynth::waveformNames[waveform].toRawUTF8();
+}
+
+double rmsOf (const std::vector<float>& samples)
+{
+    double sumOfSquares = 0.0;
+
+    for (auto s : samples)
+        sumOfSquares += (double) s * s;
+
+    return std::sqrt (sumOfSquares / (double) samples.size());
+}
+
+void testWaveformLoudness()
+{
+    // Every waveform is scaled to the sine's RMS, 1 / sqrt (2).
+    const auto sineRms = 1.0 / std::sqrt (2.0);
+    double worstDifference = 0.0;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    {
+        const auto rms = rmsOf (samplesOf (waveformTables().get (waveform).getLevel (0)));
+        std::printf ("      %-8s RMS %.4f (%+.2f dB from the sine)\n", waveformName (waveform), rms, toDecibels (rms / sineRms));
+        worstDifference = std::max (worstDifference, std::abs (toDecibels (rms / sineRms)));
+    }
+
+    check (worstDifference < 0.1, "every waveform is within 0.1 dB of the sine's loudness (RMS)");
+}
+
+void testWaveformsStartAtZero()
+{
+    // Notes start at phase 0, so a waveform that isn't zero there would click at every note on.
+    double largest = 0.0;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+        for (int level = 0; level < boringsynth::BandLimitedWaveTable::numLevels; ++level)
+            largest = std::max (largest, (double) std::abs (waveformTables().get (waveform).getLevel (level).getSample (0.0)));
+
+    std::printf ("      largest value at phase 0, any waveform and level: %.2e\n", largest);
+    check (largest < 1.0e-5, "every waveform starts at zero, so notes start without a click");
+}
+
+void testWaveformShapes()
+{
+    // Each waveform's richest level should match its ideal shape, except right next to a jump,
+    // where band-limiting necessarily rounds the corner and rings a little.
+    double worst = 0.0;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    {
+        double largestError = 0.0;
+
+        for (int i = 0; i < 10000; ++i)
+        {
+            const auto phase = juce::MathConstants<double>::twoPi * i / 10000.0;
+            const auto cyclePosition = i / 10000.0;
+            const auto nearJump = (waveform == 2 && std::abs (cyclePosition - 0.5) < 0.02)
+                               || (waveform == 3 && (cyclePosition < 0.02 || std::abs (cyclePosition - 0.5) < 0.02 || cyclePosition > 0.98));
+
+            if (nearJump)
+                continue;
+
+            const auto ideal = boringsynth::waveformGain (waveform) * boringsynth::waveformShape (waveform, phase);
+            largestError = std::max (largestError, (double) std::abs (waveformTables().get (waveform).getLevel (0).getSample (phase) - ideal));
+        }
+
+        std::printf ("      %-8s largest difference from its ideal shape %.4f\n", waveformName (waveform), largestError);
+        worst = std::max (worst, largestError);
+    }
+
+    check (worst < 0.02, "every waveform has the shape its name says (away from jumps)");
+}
+
+void testWaveformsDontAlias()
+{
+    double worst = -1000.0;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    {
+        const auto alias = loudestAlias (playAliasTestNote (waveformTables().get (waveform)));
+        std::printf ("      %-8s at 5 kHz: loudest alias %.1f dB below the fundamental\n", waveformName (waveform), -alias);
+        worst = std::max (worst, alias);
+    }
+
+    check (worst < -80.0, "no waveform has audible aliasing at a high note");
+}
+
+void testCrossfadeBetweenTables()
+{
+    // While switching tables, the output should blend from the old waveform to the new one, reading
+    // both at the same phase, then be exactly the new waveform.
+    const auto& saw = waveformTables().get (2);
+    const auto& square = waveformTables().get (3);
+    boringsynth::Oscillator fading (saw), sawOnly (saw), squareOnly (square);
+    constexpr int fadeLength = 100;
+
+    for (int i = 0; i < 50; ++i)
+    {
+        fading.getNextSample (0.05);
+        sawOnly.getNextSample (0.05);
+        squareOnly.getNextSample (0.05);
+    }
+
+    fading.setTable (square, fadeLength);
+    double largestBlendError = 0.0;
+    bool exactAfterFade = true;
+
+    for (int i = 1; i <= 2 * fadeLength; ++i)
+    {
+        const auto out = fading.getNextSample (0.05);
+        const auto from = sawOnly.getNextSample (0.05);
+        const auto to = squareOnly.getNextSample (0.05);
+
+        if (i < fadeLength)
+            largestBlendError = std::max (largestBlendError, (double) std::abs (out - (from + (float) i / fadeLength * (to - from))));
+        else
+            exactAfterFade = exactAfterFade && out == to;
+    }
+
+    check (largestBlendError < 1.0e-6, "switching waveform blends the two over the crossfade");
+    check (exactAfterFade, "after the crossfade the output is exactly the new waveform");
+}
+
 } // namespace
 
 void runOscillatorTests()
@@ -292,6 +436,11 @@ void runOscillatorTests()
     testNoAliasing();
     testOscillatorMatchesSine();
     testOscillatorAtNyquist();
+    testWaveformLoudness();
+    testWaveformsStartAtZero();
+    testWaveformShapes();
+    testWaveformsDontAlias();
+    testCrossfadeBetweenTables();
 }
 
 } // namespace testing

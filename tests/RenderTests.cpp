@@ -470,6 +470,95 @@ void testBendAboveNyquist()
     check (peakBetween (output, 17000, 32000) > 0.09f, "it plays again when bent back below Nyquist");
 }
 
+// The Waveform parameter's choices, by position: Sine, Triangle, Saw, Square.
+constexpr int sine = 0, saw = 2, square = 3;
+
+ProcessorSetUp withWaveform (int waveform)
+{
+    return [waveform] (juce::AudioProcessor& p) { setParameter (p, "waveform", (float) waveform); };
+}
+
+double rmsBetween (const std::vector<float>& samples, int start, int end)
+{
+    double sumOfSquares = 0.0;
+
+    for (auto i = start; i < end; ++i)
+        sumOfSquares += (double) samples[(size_t) i] * samples[(size_t) i];
+
+    return std::sqrt (sumOfSquares / (end - start));
+}
+
+void testDefaultWaveformIsSine()
+{
+    const auto byDefault = render ({ .events = heldNote });
+    const auto chosenSine = render ({ .events = heldNote, .setUp = withWaveform (sine) });
+    check (byDefault == chosenSine, "the default waveform is the sine");
+}
+
+void testWaveformsAreEquallyLoud()
+{
+    const auto sineRms = rmsBetween (render ({ .events = heldNote }), 4800, 48000);
+    double worst = 0.0;
+
+    const char* names[] = { "Sine", "Triangle", "Saw", "Square" };
+
+    for (int waveform = 1; waveform < 4; ++waveform)
+    {
+        const auto rms = rmsBetween (render ({ .events = heldNote, .setUp = withWaveform (waveform) }), 4800, 48000);
+        const auto difference = 20.0 * std::log10 (rms / sineRms);
+        std::printf ("      %-8s at 440 Hz: %+.2f dB from the sine\n", names[waveform], difference);
+        worst = std::max (worst, std::abs (difference));
+    }
+
+    check (worst < 0.2, "every waveform plays within 0.2 dB of the sine's loudness");
+}
+
+void testWaveformChangeCrossfades()
+{
+    // Switch a held saw note to square at the start of a block. Over the next 480 samples (10 ms)
+    // it should blend from one to the other, then be exactly what a square note would have been.
+    const auto sawOnly = render ({ .events = heldNote, .setUp = withWaveform (saw) });
+    const auto squareOnly = render ({ .events = heldNote, .setUp = withWaveform (square) });
+    const auto switched = render ({ .events = heldNote,
+                                    .setUp = withWaveform (saw),
+                                    .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                    {
+                                        if (blockStart == volumeChangeSample)
+                                            setParameter (p, "waveform", (float) square);
+                                    } });
+
+    constexpr int fadeLength = 480;
+    const auto halfway = volumeChangeSample + fadeLength / 2 - 1;
+    const auto blendAtHalfway = 0.5f * (sawOnly[(size_t) halfway] + squareOnly[(size_t) halfway]);
+
+    check (std::equal (switched.begin(), switched.begin() + volumeChangeSample, sawOnly.begin()),
+           "before a waveform change, the note is unchanged");
+    check (std::abs (switched[(size_t) halfway] - blendAtHalfway) < 1.0e-6f,
+           "halfway through the 10 ms crossfade, the note is an even blend of both waveforms");
+    check (std::equal (switched.begin() + volumeChangeSample + fadeLength - 1, switched.end(),
+                       squareOnly.begin() + volumeChangeSample + fadeLength - 1),
+           "after the crossfade, the note is exactly the new waveform");
+}
+
+void testNoteAfterWaveformChangeStartsDirectly()
+{
+    // A saw note plays and ends, then the waveform changes to square, then a second note starts.
+    // The second note should be square from its first sample, with no crossfade from the saw the
+    // voice played last. Compare it with the same two notes played as squares all along.
+    constexpr int secondNote = 20 * 512;
+    const std::vector<TimedMessage> twoNotes { { 0, noteOn (69) }, { 4800, noteOff (69) }, { secondNote, noteOn (69) } };
+    const auto changedBetween = render ({ .events = twoNotes,
+                                          .setUp = withWaveform (saw),
+                                          .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                          {
+                                              if (blockStart == 10 * 512)
+                                                  setParameter (p, "waveform", (float) square);
+                                          } });
+    const auto squareAllAlong = render ({ .events = twoNotes, .setUp = withWaveform (square) });
+    check (std::equal (changedBetween.begin() + secondNote, changedBetween.end(), squareAllAlong.begin() + secondNote),
+           "a note started after a waveform change plays the new waveform at once");
+}
+
 } // namespace
 
 void runRenderTests()
@@ -501,6 +590,10 @@ void runRenderTests()
     testBendBeforeNoteStartsBent();
     testBendGlides();
     testBendAboveNyquist();
+    testDefaultWaveformIsSine();
+    testWaveformsAreEquallyLoud();
+    testWaveformChangeCrossfades();
+    testNoteAfterWaveformChangeStartsDirectly();
 }
 
 } // namespace testing
