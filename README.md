@@ -99,6 +99,17 @@ The plug-in is at `build/Test_artefacts/Release/VST3/Test.vst3`.
 
 Replace `Release` with `Debug` in the build command for a build that is easier to step through in a debugger, but slower. The output then goes to `build/Test_artefacts/Debug/...` instead.
 
+## Running the tests
+
+The `tests` folder has a small program, `RenderTests`, that plays MIDI into the plug-in's audio code and checks what comes out. It checks levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, and that the output doesn't depend on the host's block size. Build it and run it with CTest, which comes with CMake:
+
+```bash
+cmake --build build --config Release --target RenderTests
+ctest --test-dir build -C Release --output-on-failure
+```
+
+It prints `PASS` or `FAIL` for each check. CTest reports the whole program as failed if any check fails. Run the tests after every change to the plug-in.
+
 ## How to install the plug-in
 
 The build does not install the plug-in. Copy the whole `Test.vst3` folder (on Windows it's a folder, not a single file) to your system's VST3 folder:
