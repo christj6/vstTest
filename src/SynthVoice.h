@@ -22,9 +22,11 @@ public:
     // Length of the fade-out on note off. Short enough to sound instant, long enough not to click.
     static constexpr double releaseSeconds = 0.005;
 
-    // The plug-in's parameters this voice reads: velocity sensitivity (0 to 100 %), read when each
-    // note starts, and pitch bend range (semitones), read on every block.
-    SynthVoice (const std::atomic<float>& velocitySensitivityPercent,
+    // waveTable is the waveform the voice plays; it must outlive the voice. The others are the
+    // plug-in's parameters this voice reads: velocity sensitivity (0 to 100 %), read when each note
+    // starts, and pitch bend range (semitones), read on every block.
+    SynthVoice (const WaveTable& waveTable,
+                const std::atomic<float>& velocitySensitivityPercent,
                 const std::atomic<float>& pitchBendRangeSemitones);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;

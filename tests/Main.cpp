@@ -6,6 +6,7 @@ int main()
 
     testing::runRenderTests();
     testing::runParameterTests();
+    testing::runOscillatorTests();
 
     if (testing::failures == 0)
         std::printf ("ALL PASSED\n");

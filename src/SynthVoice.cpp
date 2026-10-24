@@ -32,10 +32,12 @@ float pitchWheelToBend (int wheelValue)
 
 } // namespace
 
-SynthVoice::SynthVoice (const std::atomic<float>& velocitySensitivityPercent,
+SynthVoice::SynthVoice (const WaveTable& waveTable,
+                        const std::atomic<float>& velocitySensitivityPercent,
                         const std::atomic<float>& pitchBendRangeSemitones)
     : velocitySensitivity (velocitySensitivityPercent),
-      pitchBendRange (pitchBendRangeSemitones)
+      pitchBendRange (pitchBendRangeSemitones),
+      oscillator (waveTable)
 {
 }
 

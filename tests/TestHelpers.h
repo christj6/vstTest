@@ -108,5 +108,6 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
 
 void runRenderTests();
 void runParameterTests();
+void runOscillatorTests();
 
 } // namespace testing

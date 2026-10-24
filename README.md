@@ -16,7 +16,8 @@ It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 | [`Parameters`](src/Parameters.cpp) | Every parameter's ID, range, default and display text |
 | [`Synth.h`](src/Synth.h) | JUCE's synthesiser, which turns MIDI into notes, with the sostenuto pedal switched off |
 | [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and release fade |
-| [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time |
+| [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time, read from a wave table |
+| [`WaveTable`](src/WaveTable.cpp) | One cycle of a waveform, stored as 2048 samples and read with interpolation; built once when the plug-in loads |
 
 ## How to build the plug-in
 
@@ -115,7 +116,7 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity and pitch bend, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity and pitch bend, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Its oscillator tests check the wave table and oscillator on their own against `std::sin`, so any loss of accuracy shows up as a number. Build it and run it with CTest, which comes with CMake:
 
 ```bash
 cmake --build build --config Release --target Tests
