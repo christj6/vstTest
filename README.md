@@ -8,7 +8,15 @@ It has three parameters. With no editor window, your DAW shows them in its own g
 - **Velocity Sensitivity**, from 0 to 100 %, default 0 %. At 0 % every note plays at the same level however hard you hit the key. At 100 %, a note's level follows the standard General MIDI curve, (velocity / 127)², so velocity 64 is about 12 dB quieter. The hardest hit (velocity 127) is always full level. A note's level is set when it starts, so changing the sensitivity affects the next notes you play, not ones already sounding.
 - **Pitch Bend Range**, from 0 to 24 semitones, default 2. How far the pitch wheel bends notes, up or down. At 0 the wheel is ignored. Bends glide over 10 ms, so a keyboard that sends the wheel in coarse steps still bends smoothly. A note bent above half the sample rate (where it would distort) goes silent until it's bent back down.
 
-The whole plug-in is in [`src/BoringSynthProcessor.cpp`](src/BoringSynthProcessor.cpp), built with [JUCE](https://juce.com) 9.0.3 and CMake.
+It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
+
+| File | What it does |
+|------|--------------|
+| [`BoringSynthProcessor`](src/BoringSynthProcessor.cpp) | The plug-in itself: the audio callback, the Volume control, the output safety check, and saving and loading settings |
+| [`Parameters`](src/Parameters.cpp) | Every parameter's ID, range, default and display text |
+| [`Synth.h`](src/Synth.h) | JUCE's synthesiser, which turns MIDI into notes, with the sostenuto pedal switched off |
+| [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and release fade |
+| [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time |
 
 ## How to build the plug-in
 

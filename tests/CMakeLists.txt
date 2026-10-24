@@ -9,7 +9,7 @@ target_sources(Tests PRIVATE
     Main.cpp
     RenderTests.cpp
     ParameterTests.cpp
-    ../src/BoringSynthProcessor.cpp)
+    ${BORINGSYNTH_SOURCES})
 
 target_compile_definitions(Tests PRIVATE
     ${BORINGSYNTH_COMPILE_DEFINITIONS}

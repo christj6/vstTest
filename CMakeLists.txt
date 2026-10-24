@@ -8,6 +8,15 @@ add_subdirectory(libs/JUCE)
 
 # Shared by the plug-in and the test program (tests/CMakeLists.txt), so the two can't drift apart.
 set(BORINGSYNTH_PRODUCT_NAME "BoringSynth")
+set(BORINGSYNTH_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Synth.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/SynthVoice.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/SynthVoice.h)
 set(BORINGSYNTH_COMPILE_DEFINITIONS
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -29,7 +38,7 @@ juce_add_plugin(BoringSynth
     # Copying into Program Files needs admin; point a junction at the build output instead.
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
-target_sources(BoringSynth PRIVATE src/BoringSynthProcessor.cpp)
+target_sources(BoringSynth PRIVATE ${BORINGSYNTH_SOURCES})
 
 target_compile_definitions(BoringSynth PUBLIC ${BORINGSYNTH_COMPILE_DEFINITIONS})
 
