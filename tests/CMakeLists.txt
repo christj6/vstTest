@@ -5,14 +5,14 @@ juce_add_console_app(RenderTests
 
 target_sources(RenderTests PRIVATE
     RenderTests.cpp
-    ../src/TestProcessor.cpp)
+    ../src/BoringSynthProcessor.cpp)
 
 target_compile_definitions(RenderTests PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     DONT_SET_USING_JUCE_NAMESPACE=1
     # juce_add_plugin defines this for the plug-in; the processor's getName() needs it here too.
-    JucePlugin_Name="Test")
+    JucePlugin_Name="BoringSynth")
 
 target_link_libraries(RenderTests
     PRIVATE

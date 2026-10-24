@@ -108,10 +108,10 @@ public:
     void handleSoftPedal (int, bool) override {}
 };
 
-class TestProcessor  : public juce::AudioProcessor
+class BoringSynthProcessor  : public juce::AudioProcessor
 {
 public:
-    TestProcessor()
+    BoringSynthProcessor()
         : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
     {
         for (int i = 0; i < numVoices; ++i)
@@ -175,11 +175,11 @@ private:
         }
     }
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TestProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BoringSynthProcessor)
 };
 } // namespace
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new TestProcessor();
+    return new BoringSynthProcessor();
 }
