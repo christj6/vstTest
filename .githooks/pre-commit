@@ -1,0 +1,12 @@
+#!/bin/sh
+# Scans the changes being committed for secrets (API keys, tokens, private keys...) and blocks the
+# commit if it finds any. Turn this hook on once per clone with:
+#   git config core.hooksPath .githooks
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed, so this commit can't be checked for secrets."
+    echo "Install it (Windows: scoop install gitleaks, macOS: brew install gitleaks) and commit again."
+    exit 1
+fi
+
+exec gitleaks git --pre-commit --staged --redact --no-banner --verbose
