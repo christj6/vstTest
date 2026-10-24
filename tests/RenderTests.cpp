@@ -139,12 +139,73 @@ void testReleaseFade()
     check (tail > 200 && tail <= 240, "note off fades out over ~5 ms");
 }
 
-void testSustainPedalIgnored()
+juce::MidiMessage controller (int number, int value, int channel = 1)
 {
-    const auto output = render (testSampleRate, 512, 9600, { { 0, juce::MidiMessage::controllerEvent (1, 64, 127) },
-                                                         { 1, noteOn (69) },
-                                                         { 4800, noteOff (69) } });
-    check (lastNonZeroIndex (output) <= 4800 + 240, "sustain pedal is ignored");
+    return juce::MidiMessage::controllerEvent (channel, number, value);
+}
+
+constexpr int sustainPedal = 64;
+constexpr int sostenutoPedal = 66;
+
+// In these tests the key is released at sample 4800, so without a pedal the note ends by 5040,
+// after its 5 ms (240 sample) fade.
+constexpr int keyUp = 4800;
+constexpr int endWithoutPedal = keyUp + 240;
+
+void testSustainPedalHoldsNotes()
+{
+    // Pedal down before the note, key released at 4800, pedal released at 9600.
+    const auto output = render (testSampleRate, 512, 14400, { { 0, controller (sustainPedal, 127) },
+                                                              { 1, noteOn (69) },
+                                                              { keyUp, noteOff (69) },
+                                                              { 9600, controller (sustainPedal, 0) } });
+    const auto end = lastNonZeroIndex (output);
+    std::printf ("      sustained note ends at sample %d (pedal released at 9600)\n", end);
+    check (peakBetween (output, endWithoutPedal, 9600) > 0.09f, "the sustain pedal holds a note after its key is released");
+    check (end > 9600 && end <= 9600 + 240, "releasing the pedal ends the note with the usual fade");
+}
+
+void testSustainPedalPressedDuringNote()
+{
+    const auto output = render (testSampleRate, 512, 14400, { { 0, noteOn (69) },
+                                                              { 100, controller (sustainPedal, 127) },
+                                                              { keyUp, noteOff (69) },
+                                                              { 9600, controller (sustainPedal, 0) } });
+    check (peakBetween (output, endWithoutPedal, 9600) > 0.09f, "pressing the pedal while a key is held sustains that note");
+}
+
+void testSustainPedalAfterRelease()
+{
+    // A pedal pressed after the key is released shouldn't bring the note back or hold its fade.
+    const auto output = render (testSampleRate, 512, 9600, { { 0, noteOn (69) },
+                                                             { keyUp, noteOff (69) },
+                                                             { 4900, controller (sustainPedal, 127) } });
+    check (lastNonZeroIndex (output) <= endWithoutPedal, "pressing the pedal after a key is released doesn't hold the note");
+}
+
+void testSustainPedalThreshold()
+{
+    // MIDI treats pedal values of 64 and up as down, and 63 and below as up.
+    const auto output = render (testSampleRate, 512, 9600, { { 0, controller (sustainPedal, 63) },
+                                                             { 1, noteOn (69) },
+                                                             { keyUp, noteOff (69) } });
+    check (lastNonZeroIndex (output) <= endWithoutPedal, "a pedal value of 63 counts as up");
+}
+
+void testSustainPedalIsPerChannel()
+{
+    const auto output = render (testSampleRate, 512, 9600, { { 0, controller (sustainPedal, 127, 2) },
+                                                             { 1, noteOn (69) },
+                                                             { keyUp, noteOff (69) } });
+    check (lastNonZeroIndex (output) <= endWithoutPedal, "a sustain pedal on another MIDI channel doesn't hold the note");
+}
+
+void testSostenutoPedalIgnored()
+{
+    const auto output = render (testSampleRate, 512, 9600, { { 0, noteOn (69) },
+                                                             { 1, controller (sostenutoPedal, 127) },
+                                                             { keyUp, noteOff (69) } });
+    check (lastNonZeroIndex (output) <= endWithoutPedal, "the sostenuto pedal is ignored");
 }
 
 void testNoteTiming()
@@ -177,10 +238,12 @@ void testBlockSizeIndependence()
                                              { 101, noteOn (67) },
                                              { 2000, juce::MidiMessage::pitchWheel (1, 12000) },
                                              { 2003, juce::MidiMessage::pitchWheel (1, 3000) },
+                                             { 2500, controller (sustainPedal, 127) },
                                              { 3000, noteOff (60) },
                                              { 4000, juce::MidiMessage::pitchWheel (1, 8192) },
                                              { 5000, noteOff (64) },
-                                             { 5001, noteOff (67) } };
+                                             { 5001, noteOff (67) },
+                                             { 6000, controller (sustainPedal, 0) } };
 
     const auto blocksOf1 = render (testSampleRate, 1, 8000, events);
     const auto blocksOf7 = render (testSampleRate, 7, 8000, events);
@@ -388,7 +451,12 @@ void runRenderTests()
     testNyquist();
     testNoSampleRate();
     testReleaseFade();
-    testSustainPedalIgnored();
+    testSustainPedalHoldsNotes();
+    testSustainPedalPressedDuringNote();
+    testSustainPedalAfterRelease();
+    testSustainPedalThreshold();
+    testSustainPedalIsPerChannel();
+    testSostenutoPedalIgnored();
     testNoteTiming();
     testBlockSizeIndependence();
     testDefaultVolumeKeepsLevel();

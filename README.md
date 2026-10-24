@@ -1,6 +1,6 @@
 # BoringSynth
 
-A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once. The pitch wheel bends notes; the sustain pedal and other MIDI controllers are ignored.
+A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
 
 It has three parameters. With no editor window, your DAW shows them in its own generic controls for the plug-in. All of them can be automated and are saved with your project.
 
@@ -107,7 +107,7 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, the effect of Volume, Velocity Sensitivity and pitch bend, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity and pitch bend, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Build it and run it with CTest, which comes with CMake:
 
 ```bash
 cmake --build build --config Release --target Tests

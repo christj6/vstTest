@@ -183,14 +183,13 @@ private:
     }
 };
 
-// JUCE's Synthesiser handles the sustain, sostenuto and soft pedals by default.
-// This plug-in ignores them: a note plays exactly as long as its key is held.
+// JUCE's Synthesiser handles the sustain and sostenuto pedals by default (and ignores the soft
+// pedal). This plug-in keeps the sustain pedal, which nearly every keyboard has, and ignores
+// sostenuto, as most synths do.
 class SineSynth  : public juce::Synthesiser
 {
 public:
-    void handleSustainPedal (int, bool) override {}
     void handleSostenutoPedal (int, bool) override {}
-    void handleSoftPedal (int, bool) override {}
 };
 
 class BoringSynthProcessor  : public juce::AudioProcessor
