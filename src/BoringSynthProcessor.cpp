@@ -2,7 +2,8 @@
 
 // A synth that does nothing but play a sine wave at the pitch of each held key.
 // No envelope and no editor: note on starts the sine, note off stops it (with a 5 ms fade so the
-// cut doesn't click). The parameters are the output volume and velocity sensitivity.
+// cut doesn't click). The pitch wheel bends notes. The parameters are the output volume, velocity
+// sensitivity and pitch bend range.
 
 namespace
 {
@@ -18,6 +19,7 @@ constexpr double releaseSeconds = 0.005;
 // that uses it, so treat them as permanent.
 constexpr const char* volumeId = "volume";
 constexpr const char* velocitySensitivityId = "velocitySensitivity";
+constexpr const char* pitchBendRangeId = "pitchBendRange";
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";
 
@@ -32,12 +34,29 @@ constexpr float maxVolumeDb = 6.0f;
 // moves crackle ("zipper noise").
 constexpr double volumeSmoothingSeconds = 0.02;
 
+// Pitch bend range in semitones, either way. Two is the common default for synths.
+constexpr int maxPitchBendRange = 24;
+constexpr int defaultPitchBendRange = 2;
+
+// How long the pitch takes to follow the wheel. Many keyboards send the wheel in coarse steps;
+// this smooths them out while still feeling immediate.
+constexpr double bendSmoothingSeconds = 0.01;
+
 // A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
 // sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
 // about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
 float velocityToGain (float velocity, float sensitivity)
 {
     return (1.0f - sensitivity) + sensitivity * velocity * velocity;
+}
+
+// Converts the MIDI pitch wheel (0 to 16383, centre 8192) to -1 (fully down) to 1 (fully up).
+// The two halves are scaled separately because the wheel has one more step below the centre than
+// above it, and both extremes should reach the full bend range.
+float pitchWheelToBend (int wheelValue)
+{
+    const auto offset = (float) (wheelValue - 8192);
+    return offset >= 0.0f ? offset / 8191.0f : offset / 8192.0f;
 }
 
 struct SineSound  : public juce::SynthesiserSound
@@ -49,9 +68,12 @@ struct SineSound  : public juce::SynthesiserSound
 class SineVoice  : public juce::SynthesiserVoice
 {
 public:
-    // velocitySensitivityPercent is the plug-in's parameter (0 to 100), read when each note starts.
-    explicit SineVoice (const std::atomic<float>& velocitySensitivityPercent)
-        : velocitySensitivity (velocitySensitivityPercent)
+    // The plug-in's parameters this voice reads: velocity sensitivity (0 to 100 %), read when each
+    // note starts, and pitch bend range (semitones), read on every block.
+    SineVoice (const std::atomic<float>& velocitySensitivityPercent,
+               const std::atomic<float>& pitchBendRangeSemitones)
+        : velocitySensitivity (velocitySensitivityPercent),
+          pitchBendRange (pitchBendRangeSemitones)
     {
     }
 
@@ -60,15 +82,12 @@ public:
         return dynamic_cast<SineSound*> (sound) != nullptr;
     }
 
-    void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int) override
+    void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override
     {
         const auto sampleRate = getSampleRate();
-        const auto frequency = juce::MidiMessage::getMidiNoteInHertz (midiNote);
 
-        // Stay silent if the host hasn't given us a sample rate yet, or if the note is at or
-        // above the Nyquist frequency and would alias. This also keeps phaseDelta below pi,
-        // so wrapping the phase once per sample is always enough.
-        if (sampleRate <= 0.0 || frequency >= 0.5 * sampleRate)
+        // Stay silent if the host hasn't given us a sample rate yet.
+        if (sampleRate <= 0.0)
         {
             clearCurrentNote();
             phaseDelta = 0.0;
@@ -76,10 +95,15 @@ public:
         }
 
         phase = 0.0;
-        phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+        phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
         noteLevel = level * velocityToGain (velocity, velocitySensitivity.load() / 100.0f);
         gain = 1.0f;
         gainStep = 0.0f;
+
+        // A note played while the wheel is already pushed starts at the bent pitch, not gliding to it.
+        bendPosition = pitchWheelToBend (currentPitchWheelPosition);
+        frequencyRatio.reset (sampleRate, bendSmoothingSeconds);
+        frequencyRatio.setCurrentAndTargetValue (getBendRatio());
     }
 
     void stopNote (float, bool allowTailOff) override
@@ -94,7 +118,11 @@ public:
         phaseDelta = 0.0;
     }
 
-    void pitchWheelMoved (int) override {}
+    void pitchWheelMoved (int newPitchWheelValue) override
+    {
+        bendPosition = pitchWheelToBend (newPitchWheelValue);
+    }
+
     void controllerMoved (int, int) override {}
 
     void renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples) override
@@ -102,13 +130,25 @@ public:
         if (phaseDelta == 0.0)
             return;
 
+        // Picks up both wheel moves and changes to the bend range; either way the pitch glides.
+        frequencyRatio.setTargetValue (getBendRatio());
+
         for (int i = startSample; i < startSample + numSamples; ++i)
         {
-            const auto sample = gain * noteLevel * (float) std::sin (phase);
-            phase += phaseDelta;
+            const auto delta = phaseDelta * frequencyRatio.getNextValue();
+            float sample = 0.0f;
 
-            if (phase >= juce::MathConstants<double>::twoPi)
-                phase -= juce::MathConstants<double>::twoPi;
+            // At or above the Nyquist frequency (half the sample rate) a note would alias, so it's
+            // silent there instead. Its phase holds still, so it carries on smoothly if bent back
+            // down, and the phase never moves by more than pi per sample, so wrapping once is enough.
+            if (delta < juce::MathConstants<double>::pi)
+            {
+                sample = gain * noteLevel * (float) std::sin (phase);
+                phase += delta;
+
+                if (phase >= juce::MathConstants<double>::twoPi)
+                    phase -= juce::MathConstants<double>::twoPi;
+            }
 
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
                 buffer.addSample (ch, i, sample);
@@ -126,11 +166,21 @@ public:
 
 private:
     const std::atomic<float>& velocitySensitivity;
+    const std::atomic<float>& pitchBendRange;
     double phase = 0.0;
-    double phaseDelta = 0.0;
-    float noteLevel = 0.0f; // fixed per note: the base level scaled by velocity
-    float gain = 0.0f;      // the release fade, from 1 down to 0
+    double phaseDelta = 0.0;   // per sample, for the note's unbent pitch
+    float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
+    float gain = 0.0f;         // the release fade, from 1 down to 0
     float gainStep = 0.0f;
+    float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
+
+    // Multiplies the note's frequency. Smoothed multiplicatively, so the glide is even in pitch.
+    juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
+
+    double getBendRatio() const
+    {
+        return std::exp2 (bendPosition * pitchBendRange.load() / 12.0);
+    }
 };
 
 // JUCE's Synthesiser handles the sustain, sostenuto and soft pedals by default.
@@ -150,7 +200,7 @@ public:
         : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
     {
         for (int i = 0; i < numVoices; ++i)
-            synth.addVoice (new SineVoice (*velocitySensitivity));
+            synth.addVoice (new SineVoice (*velocitySensitivity, *pitchBendRange));
 
         synth.addSound (new SineSound());
 
@@ -227,6 +277,7 @@ private:
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
+    std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.
@@ -270,6 +321,14 @@ private:
                                                                  juce::AudioParameterFloatAttributes()
                                                                      .withLabel ("%")
                                                                      .withStringFromValueFunction (percentToText)));
+
+        // 0 ignores the pitch wheel.
+        layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { pitchBendRangeId, 1 },
+                                                               "Pitch Bend Range",
+                                                               0,
+                                                               maxPitchBendRange,
+                                                               defaultPitchBendRange,
+                                                               juce::AudioParameterIntAttributes().withLabel ("semitones")));
 
         return layout;
     }

@@ -51,11 +51,28 @@ void testVelocitySensitivityParameter()
     check (sensitivity->getText (sensitivity->convertTo0to1 (50.0f), 10) == "50", "50 % sensitivity displays as '50'");
 }
 
+void testPitchBendRangeParameter()
+{
+    auto processor = createProcessor();
+    auto* range = findParameter (*processor, "pitchBendRange");
+
+    // Spelled out on purpose, like 'volume' above.
+    check (range != nullptr, "parameter ID 'pitchBendRange' exists");
+
+    if (range == nullptr)
+        return;
+
+    check (std::abs (getParameter (*processor, "pitchBendRange") - 2.0f) < 0.01f, "pitch bend range defaults to 2 semitones");
+    check (range->getText (range->convertTo0to1 (12.0f), 10) == "12", "a 12 semitone range displays as '12'");
+    check (std::abs (range->convertFrom0to1 (1.0f) - 24.0f) < 0.01f, "pitch bend range goes up to 24 semitones");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
     setParameter (*original, "volume", -12.0f);
     setParameter (*original, "velocitySensitivity", 75.0f);
+    setParameter (*original, "pitchBendRange", 7.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -65,22 +82,26 @@ void testStateRoundTrip()
 
     const auto restoredVolume = getParameter (*restored, "volume");
     const auto restoredSensitivity = getParameter (*restored, "velocitySensitivity");
-    std::printf ("      restored volume = %.2f dB (expected -12.00), sensitivity = %.1f %% (expected 75.0)\n",
-                 restoredVolume, restoredSensitivity);
+    const auto restoredRange = getParameter (*restored, "pitchBendRange");
+    std::printf ("      restored volume = %.2f dB (expected -12.00), sensitivity = %.1f %% (expected 75.0), "
+                 "bend range = %.0f (expected 7)\n",
+                 restoredVolume, restoredSensitivity, restoredRange);
     check (std::abs (restoredVolume - (-12.0f)) < 0.01f, "volume survives saving and reloading");
     check (std::abs (restoredSensitivity - 75.0f) < 0.01f, "velocity sensitivity survives saving and reloading");
+    check (std::abs (restoredRange - 7.0f) < 0.01f, "pitch bend range survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
 }
 
-void testStateFromBeforeVelocity()
+void testStateFromOlderVersions()
 {
-    // Build the state a project saved before velocity sensitivity existed would hold: a real saved
-    // state with the velocity sensitivity entry removed.
+    // Build the state a project saved when Volume was the only parameter would hold: a real saved
+    // state with the entries for the later parameters removed.
     auto original = createProcessor();
     setParameter (*original, "volume", -12.0f);
     setParameter (*original, "velocitySensitivity", 75.0f);
+    setParameter (*original, "pitchBendRange", 7.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -92,8 +113,9 @@ void testStateFromBeforeVelocity()
         return;
     }
 
-    if (auto* entry = xml->getChildByAttribute ("id", "velocitySensitivity"))
-        xml->removeChildElement (entry, true);
+    for (auto* id : { "velocitySensitivity", "pitchBendRange" })
+        if (auto* entry = xml->getChildByAttribute ("id", id))
+            xml->removeChildElement (entry, true);
 
     juce::MemoryBlock oldState;
     juce::AudioProcessor::copyXmlToBinary (*xml, oldState);
@@ -102,9 +124,11 @@ void testStateFromBeforeVelocity()
     loaded->setStateInformation (oldState.getData(), (int) oldState.getSize());
 
     check (std::abs (getParameter (*loaded, "volume") - (-12.0f)) < 0.01f,
-           "a project from before velocity sensitivity keeps its volume");
+           "an older project keeps its volume");
     check (std::abs (getParameter (*loaded, "velocitySensitivity")) < 0.01f,
-           "a project from before velocity sensitivity loads with it at 0 % (velocity ignored, as before)");
+           "an older project loads with velocity sensitivity at 0 % (velocity ignored, as before)");
+    check (std::abs (getParameter (*loaded, "pitchBendRange") - 2.0f) < 0.01f,
+           "an older project loads with the default pitch bend range of 2 semitones");
 }
 
 void testOldAndInvalidState()
@@ -133,8 +157,9 @@ void runParameterTests()
     testVolumeParameter();
     testVolumeText();
     testVelocitySensitivityParameter();
+    testPitchBendRangeParameter();
     testStateRoundTrip();
-    testStateFromBeforeVelocity();
+    testStateFromOlderVersions();
     testOldAndInvalidState();
 }
 } // namespace testing
