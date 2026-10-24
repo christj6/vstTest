@@ -12,11 +12,9 @@ target_sources(Tests PRIVATE
     ../src/BoringSynthProcessor.cpp)
 
 target_compile_definitions(Tests PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    DONT_SET_USING_JUCE_NAMESPACE=1
+    ${BORINGSYNTH_COMPILE_DEFINITIONS}
     # juce_add_plugin defines this for the plug-in; the processor's getName() needs it here too.
-    JucePlugin_Name="BoringSynth")
+    JucePlugin_Name="${BORINGSYNTH_PRODUCT_NAME}")
 
 target_link_libraries(Tests
     PRIVATE

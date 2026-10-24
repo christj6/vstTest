@@ -6,11 +6,20 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(libs/JUCE)
 
+# Shared by the plug-in and the test program (tests/CMakeLists.txt), so the two can't drift apart.
+set(BORINGSYNTH_PRODUCT_NAME "BoringSynth")
+set(BORINGSYNTH_COMPILE_DEFINITIONS
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_REPORT_APP_USAGE=0
+    DONT_SET_USING_JUCE_NAMESPACE=1)
+
 juce_add_plugin(BoringSynth
     COMPANY_NAME "Jack"
     PLUGIN_MANUFACTURER_CODE Jack
     PLUGIN_CODE Brng
-    PRODUCT_NAME "BoringSynth"
+    PRODUCT_NAME "${BORINGSYNTH_PRODUCT_NAME}"
     FORMATS VST3
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -22,12 +31,7 @@ juce_add_plugin(BoringSynth
 
 target_sources(BoringSynth PRIVATE src/BoringSynthProcessor.cpp)
 
-target_compile_definitions(BoringSynth PUBLIC
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_REPORT_APP_USAGE=0
-    DONT_SET_USING_JUCE_NAMESPACE=1)
+target_compile_definitions(BoringSynth PUBLIC ${BORINGSYNTH_COMPILE_DEFINITIONS})
 
 target_link_libraries(BoringSynth
     PRIVATE
