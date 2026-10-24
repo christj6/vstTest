@@ -101,10 +101,10 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small program, `RenderTests`, that plays MIDI into the plug-in's audio code and checks what comes out. It checks levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, and that the output doesn't depend on the host's block size. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`, that plays MIDI into the plug-in's audio code and checks what comes out. It checks levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, and that the output doesn't depend on the host's block size. Build it and run it with CTest, which comes with CMake:
 
 ```bash
-cmake --build build --config Release --target RenderTests
+cmake --build build --config Release --target Tests
 ctest --test-dir build -C Release --output-on-failure
 ```
 
