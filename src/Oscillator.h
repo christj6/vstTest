@@ -6,6 +6,7 @@
 
 namespace boringsynth
 {
+
 // Produces a sine wave one sample at a time. It holds only the wave's phase; the caller decides the
 // pitch on every sample by passing how far the phase moves, which is how pitch bends glide.
 class Oscillator
@@ -38,4 +39,5 @@ public:
 private:
     double phase = 0.0;
 };
+
 } // namespace boringsynth

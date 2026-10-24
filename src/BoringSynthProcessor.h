@@ -12,6 +12,7 @@
 
 namespace boringsynth
 {
+
 class BoringSynthProcessor  : public juce::AudioProcessor
 {
 public:
@@ -56,4 +57,5 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BoringSynthProcessor)
 };
+
 } // namespace boringsynth

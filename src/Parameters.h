@@ -4,6 +4,7 @@
 
 namespace boringsynth
 {
+
 // Parameter and state identifiers are saved in DAW projects. Changing one breaks every project
 // that uses it, so treat them as permanent.
 constexpr const char* volumeId = "volume";
@@ -25,4 +26,5 @@ constexpr int defaultPitchBendRange = 2;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
 } // namespace boringsynth

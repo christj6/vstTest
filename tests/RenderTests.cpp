@@ -4,8 +4,10 @@
 
 namespace testing
 {
+
 namespace
 {
+
 constexpr double testSampleRate = 48000.0;
 
 float peakOf (const std::vector<float>& samples)
@@ -443,6 +445,7 @@ void testBendAboveNyquist()
     check (allFinite && peakBetween (output, 0, 16000) == 0.0f, "a note bent above Nyquist is silent");
     check (peakBetween (output, 17000, 32000) > 0.09f, "it plays again when bent back below Nyquist");
 }
+
 } // namespace
 
 void runRenderTests()
@@ -475,4 +478,5 @@ void runRenderTests()
     testBendGlides();
     testBendAboveNyquist();
 }
+
 } // namespace testing

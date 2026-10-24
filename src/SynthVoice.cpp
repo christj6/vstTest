@@ -2,8 +2,10 @@
 
 namespace boringsynth
 {
+
 namespace
 {
+
 // Fixed output level per note. Eight notes peaking together reach 0.8, below full scale.
 constexpr float level = 0.1f;
 
@@ -27,6 +29,7 @@ float pitchWheelToBend (int wheelValue)
     const auto offset = (float) (wheelValue - 8192);
     return offset >= 0.0f ? offset / 8191.0f : offset / 8192.0f;
 }
+
 } // namespace
 
 SynthVoice::SynthVoice (const std::atomic<float>& velocitySensitivityPercent,
@@ -112,4 +115,5 @@ double SynthVoice::getBendRatio() const
 {
     return std::exp2 (bendPosition * pitchBendRange.load() / 12.0);
 }
+
 } // namespace boringsynth

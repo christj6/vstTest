@@ -6,6 +6,7 @@
 
 namespace boringsynth
 {
+
 // JUCE's Synthesiser needs at least one "sound". This one covers every note on every channel.
 struct SynthSound  : public juce::SynthesiserSound
 {
@@ -48,4 +49,5 @@ private:
 
     double getBendRatio() const;
 };
+
 } // namespace boringsynth

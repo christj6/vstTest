@@ -4,8 +4,10 @@
 
 namespace boringsynth
 {
+
 namespace
 {
+
 constexpr int numVoices = 16;
 
 // How long a volume change takes to glide to its new value. Jumping instantly makes fast knob
@@ -24,6 +26,7 @@ void protectOutput (juce::AudioBuffer<float>& buffer)
             data[i] = std::isfinite (data[i]) ? juce::jlimit (-1.0f, 1.0f, data[i]) : 0.0f;
     }
 }
+
 } // namespace
 
 BoringSynthProcessor::BoringSynthProcessor()
@@ -95,6 +98,7 @@ float BoringSynthProcessor::getVolumeGain() const
 {
     return juce::Decibels::decibelsToGain (volumeDb->load(), minVolumeDb);
 }
+
 } // namespace boringsynth
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

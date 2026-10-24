@@ -2,6 +2,7 @@
 
 namespace boringsynth
 {
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
     auto volumeToText = [] (float value, int)
@@ -46,4 +47,5 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     return layout;
 }
+
 } // namespace boringsynth

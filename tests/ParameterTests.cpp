@@ -5,8 +5,10 @@
 
 namespace testing
 {
+
 namespace
 {
+
 std::unique_ptr<juce::AudioProcessor> createProcessor()
 {
     return std::unique_ptr<juce::AudioProcessor> (createPluginFilter());
@@ -150,6 +152,7 @@ void testOldAndInvalidState()
     check (std::abs (getParameter (*processor, "volume") - (-12.0f)) < 0.01f,
            "state from something other than this plug-in is ignored");
 }
+
 } // namespace
 
 void runParameterTests()
@@ -162,4 +165,5 @@ void runParameterTests()
     testStateFromOlderVersions();
     testOldAndInvalidState();
 }
+
 } // namespace testing

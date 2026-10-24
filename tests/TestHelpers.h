@@ -13,6 +13,7 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 
 namespace testing
 {
+
 inline int failures = 0;
 
 inline void check (bool passed, const char* description)
@@ -107,4 +108,5 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
 
 void runRenderTests();
 void runParameterTests();
+
 } // namespace testing
