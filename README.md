@@ -1,4 +1,3 @@
-| [`Waveforms`](src/Waveforms.cpp) | The four waveforms' shapes, their loudness matching, and the tables built from them |
 # BoringSynth
 
 A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, triangle, saw or square) at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
@@ -19,6 +18,7 @@ It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 | [`Synth.h`](src/Synth.h) | JUCE's synthesiser, which turns MIDI into notes, with the sostenuto pedal switched off |
 | [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and release fade |
 | [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time, read from a wave table |
+| [`Waveforms`](src/Waveforms.cpp) | The four waveforms' shapes, their loudness matching, and the tables built from them |
 | [`BandLimitedWaveTable`](src/BandLimitedWaveTable.cpp) | A waveform as a ladder of wave tables with fewer and fewer high harmonics (built with an FFT), so each note reads one that doesn't alias |
 | [`WaveTable`](src/WaveTable.cpp) | One cycle of a waveform, stored as 2048 samples and read with interpolation; built once when the plug-in loads |
 
