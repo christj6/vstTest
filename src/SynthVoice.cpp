@@ -16,6 +16,10 @@ constexpr double bendSmoothingSeconds = 0.01;
 // How long a change of waveform during a note takes to fade from the old waveform to the new one.
 constexpr double waveformCrossfadeSeconds = 0.01;
 
+// How long a note that's cut off (for instance, when its voice is stolen) takes to fade out. The
+// same as the shortest release, which is short enough to sound instant and long enough not to click.
+constexpr double cutOffFadeSeconds = 0.005;
+
 // A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
 // sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
 // about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
@@ -82,6 +86,19 @@ void SynthVoice::stopNote (float, bool allowTailOff)
         return;
     }
 
+    // Cut off at once. In practice that means the synth is stealing this voice for a new note
+    // because every voice is busy. (It also happens when the sample rate changes, which drops any
+    // fading note anyway.) If the note is still sounding, hand it to fadingNote to fade out,
+    // rather than stopping it dead.
+    if (phaseDelta != 0.0 && ampEnvelope.isActive())
+    {
+        fadingNote = FadingNote { oscillator,
+                                  phaseDelta * frequencyRatio.getCurrentValue(),
+                                  noteLevel * ampEnvelope.getLevel(),
+                                  1.0f,
+                                  (float) (1.0 / (cutOffFadeSeconds * getSampleRate())) };
+    }
+
     clearCurrentNote();
     phaseDelta = 0.0;
 }
@@ -93,6 +110,9 @@ void SynthVoice::pitchWheelMoved (int newPitchWheelValue)
 
 void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
+    if (fadingNote.has_value())
+        renderFadingNote (buffer, startSample, numSamples);
+
     if (phaseDelta == 0.0)
         return;
 
@@ -120,6 +140,34 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
             break;
         }
     }
+}
+
+void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
+{
+    auto& note = *fadingNote;
+
+    for (int i = startSample; i < startSample + numSamples; ++i)
+    {
+        const auto sample = note.gain * note.level * note.oscillator.getNextSample (note.phaseDelta);
+
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            buffer.addSample (ch, i, sample);
+
+        note.gain -= note.gainStep;
+
+        if (note.gain <= 0.0f)
+        {
+            fadingNote.reset();
+            return;
+        }
+    }
+}
+
+void SynthVoice::setCurrentPlaybackSampleRate (double newRate)
+{
+    // A fading note's pitch and fade were worked out for the old sample rate.
+    fadingNote.reset();
+    SynthesiserVoice::setCurrentPlaybackSampleRate (newRate);
 }
 
 double SynthVoice::getBendRatio() const

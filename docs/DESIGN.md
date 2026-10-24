@@ -9,7 +9,7 @@ The step-by-step plan is in [ROADMAP.md](ROADMAP.md).
 1. The DAW calls `BoringSynthProcessor::processBlock` with an empty buffer and the MIDI for that block.
 2. JUCE's `Synthesiser` (our subclass `Synth`) splits the block at each MIDI event and assigns notes to voices. It handles note on/off, voice stealing, the pitch wheel and the sustain pedal.
 3. Each playing `SynthVoice` asks its `Oscillator` for one sample at a time. The oscillator reads the current waveform's `BandLimitedWaveTable`, choosing the level whose harmonics all stay below Nyquist for the note's current pitch.
-4. The voice scales each sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. The output is mono, written to every channel.
+4. The voice scales each sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. If the voice was just stolen for a new note, it also plays the old note underneath, fading it out over 5 ms (its "fading note"). The output is mono, written to every channel.
 5. The processor applies the smoothed Volume, then `protectOutput`: NaN or infinity becomes silence, and anything past full scale is clipped to it. This is always the very last step.
 
 ### Who owns what
@@ -81,10 +81,12 @@ Anything that needs real work (building tables now, loading wavetable files late
 | Envelope parameter IDs start with `amp` | A filter envelope with its own attack, decay, sustain and release comes in step 17, and IDs can't be renamed later. |
 | Time knobs 0 or 5 ms up to 10 s, skewed so the middle is 0.5 s | Most of the knob's travel goes to short times, where small changes matter most. |
 | Tail length reported to the DAW is the release time | So the DAW keeps processing until notes have finished fading out. |
+| A stolen voice fades its old note out over 5 ms, underneath the new note | JUCE's synth stops a stolen voice with no tail-off, and stopping a sounding note dead clicks. The voice keeps a snapshot of the old note (oscillator, pitch, level) in a slot that's part of the voice, so nothing is allocated, and fades it for the shortest release time. Stealing is the only way a note gets cut off; JUCE handles MIDI "all sound off" with a normal release. |
 
 ## Known limitations
 
-- **Stolen voices click.** The 17th simultaneous note cuts a voice instantly. That's more likely with the sustain pedal down, and now with long release times, since fading notes keep their voices busy. Roadmap step 13 adds a crossfade.
+- **A voice stolen twice within 5 ms** still cuts its first old note: each voice keeps only one fading note, so the newer one replaces it. That needs three notes on one voice in 5 ms with every voice busy.
+- **A fading note keeps its last pitch.** Pitch bends during its 5 ms fade don't reach it, which is too short to hear.
 - **The envelope's stages are straight lines.** Many synths curve them (exponential decay and release), which can sound more natural. Easy to add later as an option, without breaking projects.
 - **Brightness steps when bending saw or square** across a band-limiting level boundary. Crossfading between neighbouring levels would fix it if it's audible.
 - **Not yet checked by tools:** Steinberg's VST3 validator, and building on macOS or Linux. pluginval is run by hand, not from CTest.

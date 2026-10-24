@@ -135,6 +135,9 @@ public:
     // False once the release has finished (or before the first note).
     bool isActive() const noexcept { return stage != Stage::idle; }
 
+    // The level the next sample will have, without moving on.
+    float getLevel() const noexcept { return level; }
+
 private:
     enum class Stage { idle, attack, decay, sustain, release };
 

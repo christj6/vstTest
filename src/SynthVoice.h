@@ -6,6 +6,8 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <optional>
+
 namespace boringsynth
 {
 
@@ -46,8 +48,25 @@ public:
     void pitchWheelMoved (int newPitchWheelValue) override;
     void controllerMoved (int, int) override {}
     void renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples) override;
+    void setCurrentPlaybackSampleRate (double newRate) override;
 
 private:
+    // A note that was cut off while still sounding: most often because the voice was stolen for a
+    // new note when all voices were busy. Instead of stopping dead, which clicks, it carries on
+    // underneath the voice's new note, at its last pitch and level, and fades to silence.
+    struct FadingNote
+    {
+        Oscillator oscillator;
+        double phaseDelta; // its last pitch, bend included
+        float level;       // its level when it was cut off
+        float gain;        // the fade, from 1 down to 0
+        float gainStep;
+    };
+
+    std::optional<FadingNote> fadingNote;
+
+    void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+
     const WaveformTables& tables;
     VoiceParameters parameters;
     Oscillator oscillator;

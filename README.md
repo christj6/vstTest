@@ -1,6 +1,6 @@
 # BoringSynth
 
-A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, triangle, saw or square) at that key's pitch, shaped over time by an ADSR envelope. By default, a note starts at full level and stops 5 ms after you release the key. There is no filter or editor window yet. It can play up to 16 notes at once. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
+A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, triangle, saw or square) at that key's pitch, shaped over time by an ADSR envelope. By default, a note starts at full level and stops 5 ms after you release the key. There is no filter or editor window yet. It can play up to 16 notes at once; a 17th takes over the voice of an earlier note, which fades out over 5 ms rather than clicking. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
 
 It has eight parameters. With no editor window, your DAW shows them in its own generic controls for the plug-in. All of them can be automated and are saved with your project.
 
