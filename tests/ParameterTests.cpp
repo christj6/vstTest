@@ -36,10 +36,26 @@ void testVolumeText()
            "typing '-inf' sets the minimum volume");
 }
 
+void testVelocitySensitivityParameter()
+{
+    auto processor = createProcessor();
+    auto* sensitivity = findParameter (*processor, "velocitySensitivity");
+
+    // Spelled out on purpose, like 'volume' above.
+    check (sensitivity != nullptr, "parameter ID 'velocitySensitivity' exists");
+
+    if (sensitivity == nullptr)
+        return;
+
+    check (std::abs (getParameter (*processor, "velocitySensitivity")) < 0.01f, "velocity sensitivity defaults to 0 %");
+    check (sensitivity->getText (sensitivity->convertTo0to1 (50.0f), 10) == "50", "50 % sensitivity displays as '50'");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
     setParameter (*original, "volume", -12.0f);
+    setParameter (*original, "velocitySensitivity", 75.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -48,11 +64,47 @@ void testStateRoundTrip()
     restored->setStateInformation (state.getData(), (int) state.getSize());
 
     const auto restoredVolume = getParameter (*restored, "volume");
-    std::printf ("      restored volume = %.2f dB (expected -12.00)\n", restoredVolume);
+    const auto restoredSensitivity = getParameter (*restored, "velocitySensitivity");
+    std::printf ("      restored volume = %.2f dB (expected -12.00), sensitivity = %.1f %% (expected 75.0)\n",
+                 restoredVolume, restoredSensitivity);
     check (std::abs (restoredVolume - (-12.0f)) < 0.01f, "volume survives saving and reloading");
+    check (std::abs (restoredSensitivity - 75.0f) < 0.01f, "velocity sensitivity survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
+}
+
+void testStateFromBeforeVelocity()
+{
+    // Build the state a project saved before velocity sensitivity existed would hold: a real saved
+    // state with the velocity sensitivity entry removed.
+    auto original = createProcessor();
+    setParameter (*original, "volume", -12.0f);
+    setParameter (*original, "velocitySensitivity", 75.0f);
+
+    juce::MemoryBlock state;
+    original->getStateInformation (state);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
+
+    if (xml == nullptr)
+    {
+        check (false, "saved state is readable XML");
+        return;
+    }
+
+    if (auto* entry = xml->getChildByAttribute ("id", "velocitySensitivity"))
+        xml->removeChildElement (entry, true);
+
+    juce::MemoryBlock oldState;
+    juce::AudioProcessor::copyXmlToBinary (*xml, oldState);
+
+    auto loaded = createProcessor();
+    loaded->setStateInformation (oldState.getData(), (int) oldState.getSize());
+
+    check (std::abs (getParameter (*loaded, "volume") - (-12.0f)) < 0.01f,
+           "a project from before velocity sensitivity keeps its volume");
+    check (std::abs (getParameter (*loaded, "velocitySensitivity")) < 0.01f,
+           "a project from before velocity sensitivity loads with it at 0 % (velocity ignored, as before)");
 }
 
 void testOldAndInvalidState()
@@ -80,7 +132,9 @@ void runParameterTests()
 {
     testVolumeParameter();
     testVolumeText();
+    testVelocitySensitivityParameter();
     testStateRoundTrip();
+    testStateFromBeforeVelocity();
     testOldAndInvalidState();
 }
 } // namespace testing

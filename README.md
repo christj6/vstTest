@@ -2,7 +2,10 @@
 
 A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once, and ignores the sustain pedal and other MIDI controllers.
 
-The only parameter is **Volume**, from -inf (silence) to +6 dB, default 0 dB. With no editor window, your DAW shows it in its own generic controls for the plug-in. It can be automated, and it's saved with your project. Changes glide over 20 ms, so fast moves and automation don't crackle.
+It has two parameters. With no editor window, your DAW shows them in its own generic controls for the plug-in. Both can be automated and are saved with your project.
+
+- **Volume**, from -inf (silence) to +6 dB, default 0 dB. Changes glide over 20 ms, so fast moves and automation don't crackle.
+- **Velocity Sensitivity**, from 0 to 100 %, default 0 %. At 0 % every note plays at the same level however hard you hit the key. At 100 %, a note's level follows the standard General MIDI curve, (velocity / 127)², so velocity 64 is about 12 dB quieter. The hardest hit (velocity 127) is always full level. A note's level is set when it starts, so changing the sensitivity affects the next notes you play, not ones already sounding.
 
 The whole plug-in is in [`src/BoringSynthProcessor.cpp`](src/BoringSynthProcessor.cpp), built with [JUCE](https://juce.com) 9.0.3 and CMake.
 
@@ -103,7 +106,7 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, the Volume parameter's effect, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, note timing, the effect of Volume and Velocity Sensitivity, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Build it and run it with CTest, which comes with CMake:
 
 ```bash
 cmake --build build --config Release --target Tests

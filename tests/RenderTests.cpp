@@ -43,7 +43,11 @@ int lastNonZeroIndex (const std::vector<float>& samples)
     return -1;
 }
 
-juce::MidiMessage noteOn (int note)  { return juce::MidiMessage::noteOn (1, note, (juce::uint8) 100); }
+juce::MidiMessage noteOn (int note, int velocity = 100)
+{
+    return juce::MidiMessage::noteOn (1, note, (juce::uint8) velocity);
+}
+
 juce::MidiMessage noteOff (int note) { return juce::MidiMessage::noteOff (1, note); }
 
 //==============================================================================
@@ -216,6 +220,55 @@ void testSavedVolumeDoesNotFadeIn()
     std::printf ("      first 200 samples peak at %.4f (expected %.4f)\n", startPeak, expected);
     check (std::abs (startPeak - expected) < 0.0005f, "a volume set before playback doesn't fade in");
 }
+
+// The peak level of one note at the given velocity and velocity sensitivity (percent).
+float notePeak (int velocity, float sensitivity)
+{
+    return peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, velocity) } }, true,
+                           [sensitivity] (juce::AudioProcessor& p) { setParameter (p, "velocitySensitivity", sensitivity); }));
+}
+
+void testVelocityIgnoredByDefault()
+{
+    const auto soft = peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, 1) } }));
+    const auto hard = peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, 127) } }));
+    std::printf ("      default sensitivity: velocity 1 peaks at %.4f, velocity 127 at %.4f\n", soft, hard);
+    check (std::abs (soft - 0.1f) < 0.0005f && std::abs (hard - 0.1f) < 0.0005f,
+           "velocity is ignored at the default sensitivity (0 %)");
+}
+
+void testFullVelocitySensitivity()
+{
+    // At 100 %, level follows (velocity / 127) squared, so velocity 64 is about -12 dB.
+    const auto hard = notePeak (127, 100.0f);
+    const auto medium = notePeak (64, 100.0f);
+    const auto expectedMedium = 0.1f * std::pow (64.0f / 127.0f, 2.0f);
+    std::printf ("      100 %%: velocity 127 peaks at %.4f, velocity 64 at %.4f (expected %.4f)\n",
+                 hard, medium, expectedMedium);
+    check (std::abs (hard - 0.1f) < 0.0005f, "the hardest hit stays at full level at 100 % sensitivity");
+    check (std::abs (medium - expectedMedium) < 0.0005f, "velocity 64 is about -12 dB at 100 % sensitivity");
+}
+
+void testHalfVelocitySensitivity()
+{
+    const auto medium = notePeak (64, 50.0f);
+    const auto expected = 0.1f * (0.5f + 0.5f * std::pow (64.0f / 127.0f, 2.0f));
+    std::printf ("      50 %%: velocity 64 peaks at %.4f (expected %.4f)\n", medium, expected);
+    check (std::abs (medium - expected) < 0.0005f, "50 % sensitivity is halfway between ignoring velocity and full");
+}
+
+void testSensitivityChangeKeepsHeldNotes()
+{
+    // A note's level is set when it starts. Turning sensitivity up mid-note shouldn't change it.
+    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69, 32) } }, true, {},
+                                [] (juce::AudioProcessor& p, int blockStart)
+                                {
+                                    if (blockStart == volumeChangeSample)
+                                        setParameter (p, "velocitySensitivity", 100.0f);
+                                });
+    const auto afterChange = peakBetween (output, volumeChangeSample, (int) output.size());
+    check (std::abs (afterChange - 0.1f) < 0.0005f, "changing sensitivity doesn't affect a note already playing");
+}
 } // namespace
 
 void runRenderTests()
@@ -233,5 +286,9 @@ void runRenderTests()
     testVolumeChangeIsSmooth();
     testVolumeGlideLength();
     testSavedVolumeDoesNotFadeIn();
+    testVelocityIgnoredByDefault();
+    testFullVelocitySensitivity();
+    testHalfVelocitySensitivity();
+    testSensitivityChangeKeepsHeldNotes();
 }
 } // namespace testing

@@ -2,7 +2,7 @@
 
 // A synth that does nothing but play a sine wave at the pitch of each held key.
 // No envelope and no editor: note on starts the sine, note off stops it (with a 5 ms fade so the
-// cut doesn't click). The only parameter is the output volume.
+// cut doesn't click). The parameters are the output volume and velocity sensitivity.
 
 namespace
 {
@@ -17,6 +17,7 @@ constexpr double releaseSeconds = 0.005;
 // Parameter and state identifiers are saved in DAW projects. Changing one breaks every project
 // that uses it, so treat them as permanent.
 constexpr const char* volumeId = "volume";
+constexpr const char* velocitySensitivityId = "velocitySensitivity";
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";
 
@@ -31,6 +32,14 @@ constexpr float maxVolumeDb = 6.0f;
 // moves crackle ("zipper noise").
 constexpr double volumeSmoothingSeconds = 0.02;
 
+// A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
+// sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
+// about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
+float velocityToGain (float velocity, float sensitivity)
+{
+    return (1.0f - sensitivity) + sensitivity * velocity * velocity;
+}
+
 struct SineSound  : public juce::SynthesiserSound
 {
     bool appliesToNote (int) override { return true; }
@@ -40,12 +49,18 @@ struct SineSound  : public juce::SynthesiserSound
 class SineVoice  : public juce::SynthesiserVoice
 {
 public:
+    // velocitySensitivityPercent is the plug-in's parameter (0 to 100), read when each note starts.
+    explicit SineVoice (const std::atomic<float>& velocitySensitivityPercent)
+        : velocitySensitivity (velocitySensitivityPercent)
+    {
+    }
+
     bool canPlaySound (juce::SynthesiserSound* sound) override
     {
         return dynamic_cast<SineSound*> (sound) != nullptr;
     }
 
-    void startNote (int midiNote, float, juce::SynthesiserSound*, int) override
+    void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int) override
     {
         const auto sampleRate = getSampleRate();
         const auto frequency = juce::MidiMessage::getMidiNoteInHertz (midiNote);
@@ -62,6 +77,7 @@ public:
 
         phase = 0.0;
         phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+        noteLevel = level * velocityToGain (velocity, velocitySensitivity.load() / 100.0f);
         gain = 1.0f;
         gainStep = 0.0f;
     }
@@ -88,7 +104,7 @@ public:
 
         for (int i = startSample; i < startSample + numSamples; ++i)
         {
-            const auto sample = gain * level * (float) std::sin (phase);
+            const auto sample = gain * noteLevel * (float) std::sin (phase);
             phase += phaseDelta;
 
             if (phase >= juce::MathConstants<double>::twoPi)
@@ -109,9 +125,11 @@ public:
     }
 
 private:
+    const std::atomic<float>& velocitySensitivity;
     double phase = 0.0;
     double phaseDelta = 0.0;
-    float gain = 0.0f;
+    float noteLevel = 0.0f; // fixed per note: the base level scaled by velocity
+    float gain = 0.0f;      // the release fade, from 1 down to 0
     float gainStep = 0.0f;
 };
 
@@ -132,7 +150,7 @@ public:
         : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
     {
         for (int i = 0; i < numVoices; ++i)
-            synth.addVoice (new SineVoice());
+            synth.addVoice (new SineVoice (*velocitySensitivity));
 
         synth.addSound (new SineSound());
 
@@ -208,6 +226,7 @@ private:
     SineSynth synth;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
+    std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.
@@ -230,14 +249,29 @@ private:
             return text.trim().startsWithIgnoreCase ("-inf") ? minVolumeDb : text.getFloatValue();
         };
 
-        return { std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { volumeId, 1 },
-                                                              "Volume",
-                                                              juce::NormalisableRange<float> (minVolumeDb, maxVolumeDb, 0.1f),
-                                                              0.0f,
-                                                              juce::AudioParameterFloatAttributes()
-                                                                  .withLabel ("dB")
-                                                                  .withStringFromValueFunction (volumeToText)
-                                                                  .withValueFromStringFunction (textToVolume)) };
+        auto percentToText = [] (float value, int) { return juce::String (juce::roundToInt (value)); };
+
+        juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { volumeId, 1 },
+                                                                 "Volume",
+                                                                 juce::NormalisableRange<float> (minVolumeDb, maxVolumeDb, 0.1f),
+                                                                 0.0f,
+                                                                 juce::AudioParameterFloatAttributes()
+                                                                     .withLabel ("dB")
+                                                                     .withStringFromValueFunction (volumeToText)
+                                                                     .withValueFromStringFunction (textToVolume)));
+
+        // Defaults to 0 %, which ignores velocity: the plug-in's behaviour before this existed.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { velocitySensitivityId, 1 },
+                                                                 "Velocity Sensitivity",
+                                                                 juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+                                                                 0.0f,
+                                                                 juce::AudioParameterFloatAttributes()
+                                                                     .withLabel ("%")
+                                                                     .withStringFromValueFunction (percentToText)));
+
+        return layout;
     }
 
     // Last line of defence before audio leaves the plug-in. NaN or infinity would poison every
