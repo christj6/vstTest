@@ -27,6 +27,10 @@ constexpr int currentStateVersion = 1;
 constexpr float minVolumeDb = -60.0f;
 constexpr float maxVolumeDb = 6.0f;
 
+// How long a volume change takes to glide to its new value. Jumping instantly makes fast knob
+// moves crackle ("zipper noise").
+constexpr double volumeSmoothingSeconds = 0.02;
+
 struct SineSound  : public juce::SynthesiserSound
 {
     bool appliesToNote (int) override { return true; }
@@ -137,7 +141,15 @@ public:
         synth.setMinimumRenderingSubdivisionSize (1);
     }
 
-    void prepareToPlay (double sampleRate, int) override { synth.setCurrentPlaybackSampleRate (sampleRate); }
+    void prepareToPlay (double sampleRate, int) override
+    {
+        synth.setCurrentPlaybackSampleRate (sampleRate);
+
+        // Start at the current volume rather than gliding to it, so a project's saved volume
+        // doesn't fade in when playback starts.
+        volumeGain.reset (sampleRate, volumeSmoothingSeconds);
+        volumeGain.setCurrentAndTargetValue (getVolumeGain());
+    }
     void releaseResources() override {}
 
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override
@@ -151,7 +163,8 @@ public:
         juce::ScopedNoDenormals noDenormals;
         buffer.clear();
         synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
-        buffer.applyGain (juce::Decibels::decibelsToGain (volumeDb->load(), minVolumeDb));
+        volumeGain.setTargetValue (getVolumeGain());
+        volumeGain.applyGain (buffer, buffer.getNumSamples());
         protectOutput (buffer);
     }
 
@@ -195,6 +208,15 @@ private:
     SineSynth synth;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
+
+    // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
+    // exactly 0, which multiplicative (dB-style) smoothing can never reach.
+    juce::SmoothedValue<float> volumeGain;
+
+    float getVolumeGain() const
+    {
+        return juce::Decibels::decibelsToGain (volumeDb->load(), minVolumeDb);
+    }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     {

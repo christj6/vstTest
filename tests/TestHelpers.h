@@ -30,13 +30,17 @@ struct TimedMessage
 };
 
 using ProcessorSetUp = std::function<void (juce::AudioProcessor&)>;
+using BlockHook = std::function<void (juce::AudioProcessor&, int blockStart)>;
 
 // Renders channel 0 of the plug-in's output. Events are given at absolute sample positions and are
 // delivered in whichever block they fall in, the way a host would. setUp, if given, runs on the
-// new processor before any audio is rendered, e.g. to change parameters.
+// new processor before any audio is rendered, e.g. to change parameters. beforeEachBlock, if
+// given, runs before each block with the block's first sample position, e.g. to automate a
+// parameter mid-render the way a host does.
 inline std::vector<float> render (double rate, int blockSize, int numSamples,
                                   const std::vector<TimedMessage>& events,
-                                  bool prepare = true, const ProcessorSetUp& setUp = {})
+                                  bool prepare = true, const ProcessorSetUp& setUp = {},
+                                  const BlockHook& beforeEachBlock = {})
 {
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
 
@@ -59,6 +63,9 @@ inline std::vector<float> render (double rate, int blockSize, int numSamples,
         for (const auto& event : events)
             if (event.samplePosition >= blockStart && event.samplePosition < blockStart + numThisBlock)
                 midi.addEvent (event.message, event.samplePosition - blockStart);
+
+        if (beforeEachBlock)
+            beforeEachBlock (*processor, blockStart);
 
         processor->processBlock (buffer, midi);
 

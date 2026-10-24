@@ -18,6 +18,22 @@ float peakOf (const std::vector<float>& samples)
     return peak;
 }
 
+float peakBetween (const std::vector<float>& samples, int start, int end)
+{
+    return peakOf (std::vector<float> (samples.begin() + start, samples.begin() + end));
+}
+
+// The largest change from one sample to the next. A sudden jump in level shows up here.
+float largestStep (const std::vector<float>& samples)
+{
+    float largest = 0.0f;
+
+    for (size_t i = 1; i < samples.size(); ++i)
+        largest = std::max (largest, std::abs (samples[i] - samples[i - 1]));
+
+    return largest;
+}
+
 int lastNonZeroIndex (const std::vector<float>& samples)
 {
     for (auto i = (int) samples.size() - 1; i >= 0; --i)
@@ -155,6 +171,51 @@ void testMinimumVolumeIsSilent()
                                 [] (juce::AudioProcessor& p) { setParameter (p, "volume", -60.0f); });
     check (peakOf (output) == 0.0f, "minimum volume is silent");
 }
+
+// Renders a held note, with the volume jumping from 0 dB to silence at the start of a block,
+// the way a host delivers automation.
+constexpr int volumeChangeSample = 47 * 512;
+
+std::vector<float> renderVolumeDrop()
+{
+    return render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true, {},
+                   [] (juce::AudioProcessor& p, int blockStart)
+                   {
+                       if (blockStart == volumeChangeSample)
+                           setParameter (p, "volume", -60.0f);
+                   });
+}
+
+void testVolumeChangeIsSmooth()
+{
+    // The sine itself changes by up to a certain amount per sample. A smoothed volume change
+    // barely adds to that; an instant one jumps by up to the note's whole level (0.1).
+    const auto steady = largestStep (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
+    const auto dropped = largestStep (renderVolumeDrop());
+    std::printf ("      largest sample-to-sample step: %.5f steady, %.5f with the volume drop\n", steady, dropped);
+    check (dropped <= steady * 1.05f, "a sudden volume change doesn't jump the output");
+}
+
+void testVolumeGlideLength()
+{
+    // 20 ms at 48 kHz is 960 samples: the level should reach silence by then, not before.
+    const auto output = renderVolumeDrop();
+    const auto glide = lastNonZeroIndex (output) - volumeChangeSample;
+    std::printf ("      volume glides to silence in %d samples (%.2f ms)\n", glide, glide / testSampleRate * 1000.0);
+    check (glide > 900 && glide <= 960, "a volume change glides over ~20 ms");
+}
+
+void testSavedVolumeDoesNotFadeIn()
+{
+    // A volume set before playback starts (like one loaded from a project) should apply from the
+    // first sample. 200 samples is under a fifth of the glide, but more than one cycle of the note.
+    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
+                                [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); });
+    const auto startPeak = peakBetween (output, 0, 200);
+    const auto expected = 0.1f * juce::Decibels::decibelsToGain (-12.0f);
+    std::printf ("      first 200 samples peak at %.4f (expected %.4f)\n", startPeak, expected);
+    check (std::abs (startPeak - expected) < 0.0005f, "a volume set before playback doesn't fade in");
+}
 } // namespace
 
 void runRenderTests()
@@ -169,5 +230,8 @@ void runRenderTests()
     testDefaultVolumeKeepsLevel();
     testVolumeChangesLevel();
     testMinimumVolumeIsSilent();
+    testVolumeChangeIsSmooth();
+    testVolumeGlideLength();
+    testSavedVolumeDoesNotFadeIn();
 }
 } // namespace testing

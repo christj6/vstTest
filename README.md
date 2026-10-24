@@ -2,7 +2,7 @@
 
 A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once, and ignores the sustain pedal and other MIDI controllers.
 
-The only parameter is **Volume**, from -inf (silence) to +6 dB, default 0 dB. With no editor window, your DAW shows it in its own generic controls for the plug-in. It can be automated, and it's saved with your project.
+The only parameter is **Volume**, from -inf (silence) to +6 dB, default 0 dB. With no editor window, your DAW shows it in its own generic controls for the plug-in. It can be automated, and it's saved with your project. Changes glide over 20 ms, so fast moves and automation don't crackle.
 
 The whole plug-in is in [`src/BoringSynthProcessor.cpp`](src/BoringSynthProcessor.cpp), built with [JUCE](https://juce.com) 9.0.3 and CMake.
 
