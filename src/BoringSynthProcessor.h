@@ -2,7 +2,7 @@
 
 #include "Parameters.h"
 #include "Synth.h"
-#include "WaveTable.h"
+#include "BandLimitedWaveTable.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -45,7 +45,7 @@ public:
 
 private:
     // Declared before the synth, so it outlives the voices that read it.
-    WaveTable sineTable { [] (double phase) { return (float) std::sin (phase); } };
+    BandLimitedWaveTable sineTable { [] (double phase) { return (float) std::sin (phase); } };
 
     Synth synth;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };

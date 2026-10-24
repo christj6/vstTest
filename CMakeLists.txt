@@ -9,6 +9,8 @@ add_subdirectory(libs/JUCE)
 # Shared by the plug-in and the test program (tests/CMakeLists.txt), so the two can't drift apart.
 set(BORINGSYNTH_PRODUCT_NAME "BoringSynth")
 set(BORINGSYNTH_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BandLimitedWaveTable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BandLimitedWaveTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h

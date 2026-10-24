@@ -17,6 +17,7 @@ It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 | [`Synth.h`](src/Synth.h) | JUCE's synthesiser, which turns MIDI into notes, with the sostenuto pedal switched off |
 | [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and release fade |
 | [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time, read from a wave table |
+| [`BandLimitedWaveTable`](src/BandLimitedWaveTable.cpp) | A waveform as a ladder of wave tables with fewer and fewer high harmonics (built with an FFT), so each note reads one that doesn't alias |
 | [`WaveTable`](src/WaveTable.cpp) | One cycle of a waveform, stored as 2048 samples and read with interpolation; built once when the plug-in loads |
 
 ## How to build the plug-in

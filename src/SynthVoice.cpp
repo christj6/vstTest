@@ -32,7 +32,7 @@ float pitchWheelToBend (int wheelValue)
 
 } // namespace
 
-SynthVoice::SynthVoice (const WaveTable& waveTable, const VoiceParameters& voiceParameters)
+SynthVoice::SynthVoice (const BandLimitedWaveTable& waveTable, const VoiceParameters& voiceParameters)
     : parameters (voiceParameters),
       oscillator (waveTable)
 {

@@ -32,7 +32,7 @@ public:
 
     // waveTable is the waveform the voice plays. The table and the parameter values must outlive
     // the voice; the struct itself is copied.
-    SynthVoice (const WaveTable& waveTable, const VoiceParameters& voiceParameters);
+    SynthVoice (const BandLimitedWaveTable& waveTable, const VoiceParameters& voiceParameters);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;
     void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;

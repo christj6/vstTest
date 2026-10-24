@@ -12,4 +12,12 @@ WaveTable::WaveTable (const std::function<float (double phase)>& shape)
     samples[(size_t) size] = samples[0];
 }
 
+WaveTable::WaveTable (const std::vector<float>& cycle)
+    : samples (cycle)
+{
+    jassert ((int) cycle.size() == size);
+    samples.resize ((size_t) size + 1);
+    samples[(size_t) size] = samples[0];
+}
+
 } // namespace boringsynth

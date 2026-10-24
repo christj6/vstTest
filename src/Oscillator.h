@@ -1,18 +1,19 @@
 #pragma once
 
-#include "WaveTable.h"
+#include "BandLimitedWaveTable.h"
 
 namespace boringsynth
 {
 
-// Produces a waveform one sample at a time by reading a WaveTable. It holds only the wave's phase;
-// the caller decides the pitch on every sample by passing how far the phase moves, which is how
-// pitch bends glide.
+// Produces a waveform one sample at a time by reading a BandLimitedWaveTable. It holds only the
+// wave's phase; the caller decides the pitch on every sample by passing how far the phase moves,
+// which is how pitch bends glide. Each sample reads the table level that suits that pitch, so the
+// waveform never aliases.
 class Oscillator
 {
 public:
     // The table must outlive the oscillator. It's shared, so the oscillator never changes it.
-    explicit Oscillator (const WaveTable& waveTable) : table (waveTable) {}
+    explicit Oscillator (const BandLimitedWaveTable& waveTable) : table (waveTable) {}
 
     // Starts the wave again from the beginning of its cycle.
     void reset() noexcept { phase = 0.0; }
@@ -29,7 +30,7 @@ public:
         if (phaseDelta >= juce::MathConstants<double>::pi)
             return 0.0f;
 
-        const auto sample = table.getSample (phase);
+        const auto sample = table.getTableFor (phaseDelta).getSample (phase);
         phase += phaseDelta;
 
         if (phase >= juce::MathConstants<double>::twoPi)
@@ -39,7 +40,7 @@ public:
     }
 
 private:
-    const WaveTable& table;
+    const BandLimitedWaveTable& table;
     double phase = 0.0;
 };
 

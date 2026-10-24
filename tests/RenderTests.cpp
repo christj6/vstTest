@@ -223,20 +223,22 @@ void testNoteTiming()
     const auto oneNote = render ({ .numSamples = 2048, .events = { { 100, noteOn (60) } } });
     const auto twoNotes = render ({ .numSamples = 2048, .events = { { 100, noteOn (60) }, { 110, noteOn (72) } } });
 
-    int firstDifference = -1;
+    // A sine starts at zero, so a note starting at sample 110 is first heard at sample 111. Its
+    // first sample there is about 0.007; the sine tables are only zero at the start to within
+    // rounding (around 1e-8), so "heard" means a difference above 1e-6.
+    int firstAudible = -1;
 
     for (int i = 0; i < 2048; ++i)
     {
-        if (twoNotes[(size_t) i] != oneNote[(size_t) i])
+        if (std::abs (twoNotes[(size_t) i] - oneNote[(size_t) i]) > 1.0e-6f)
         {
-            firstDifference = i;
+            firstAudible = i;
             break;
         }
     }
 
-    // The sine starts at phase 0, so a note starting at sample 110 first changes sample 111.
-    std::printf ("      second note first changes output at sample %d (expected 111)\n", firstDifference);
-    check (firstDifference == 111, "a note 10 samples after another starts on its exact sample");
+    std::printf ("      second note is first heard at sample %d (expected 111)\n", firstAudible);
+    check (firstAudible == 111, "a note 10 samples after another starts on its exact sample");
 }
 
 void testBlockSizeIndependence()

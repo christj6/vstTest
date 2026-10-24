@@ -24,6 +24,9 @@ public:
     // 2 pi. shape returns the waveform's value at that phase, from -1 to 1.
     explicit WaveTable (const std::function<float (double phase)>& shape);
 
+    // Uses `cycle` as the table: exactly `size` samples covering one cycle.
+    explicit WaveTable (const std::vector<float>& cycle);
+
     // The waveform's value at a phase from 0 up to 2 pi.
     float getSample (double phase) const noexcept
     {
