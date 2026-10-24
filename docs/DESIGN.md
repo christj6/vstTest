@@ -9,7 +9,7 @@ The step-by-step plan is in [ROADMAP.md](ROADMAP.md).
 1. The DAW calls `BoringSynthProcessor::processBlock` with an empty buffer and the MIDI for that block.
 2. JUCE's `Synthesiser` (our subclass `Synth`) splits the block at each MIDI event and assigns notes to voices. It handles note on/off, voice stealing, the pitch wheel and the sustain pedal.
 3. Each playing `SynthVoice` asks its `Oscillator` for one sample at a time. The oscillator reads the current waveform's `BandLimitedWaveTable`, choosing the level whose harmonics all stay below Nyquist for the note's current pitch.
-4. The voice scales each sample by the note's level (velocity) and its release fade, and adds it to the buffer. The output is mono, written to every channel.
+4. The voice scales each sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. The output is mono, written to every channel.
 5. The processor applies the smoothed Volume, then `protectOutput`: NaN or infinity becomes silence, and anything past full scale is clipped to it. This is always the very last step.
 
 ### Who owns what
@@ -26,7 +26,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
 
@@ -75,11 +75,17 @@ Anything that needs real work (building tables now, loading wavetable files late
 | 11 band-limited levels an octave apart (1023, 512, … 1 harmonics), built with an FFT | Standard "mipmapped" wavetables. **Tradeoffs:** a note can lose up to its top octave of harmonics (the quietest ones), and bending across a level boundary changes brightness in a step. |
 | Waveforms matched to the sine's RMS | Simple, explainable loudness matching. Triangle and saw are scaled by √1.5, square by √0.5, sine by exactly 1, so the sine stays bit-for-bit unchanged. |
 | Waveform changes during a note crossfade over 10 ms, counted in whole samples | Avoids a click at the switch. Whole samples make the fade end on exactly its last sample, which floats didn't. |
-| Release: a fixed 5 ms linear fade | The minimum that avoids a click on note off. Roadmap step 12 replaces it with an ADSR whose defaults reproduce it. |
+| Our own `Envelope` class rather than `juce::ADSR` | `juce::ADSR` jumps when the sustain level changes mid-note. Updating its settings every block (needed so knob moves reach held notes) also resets the release speed from the sustain level, so a note released early fades too fast, and with a sustain of 0 it cuts off instantly. Ours glides sustain changes over 20 ms, always releases from the note's current level over the release time, and takes settings every block. Each case has a test. |
+| Envelope defaults: attack 0, sustain 100 %, release 5 ms (decay 200 ms) | Reproduces the old fixed 5 ms fade bit for bit. An instant attack is click-free because every waveform starts at zero. Decay only matters once sustain is lowered. |
+| Decay and release can't go below 5 ms | So the envelope can never jump in level and click. |
+| Envelope parameter IDs start with `amp` | A filter envelope with its own attack, decay, sustain and release comes in step 17, and IDs can't be renamed later. |
+| Time knobs 0 or 5 ms up to 10 s, skewed so the middle is 0.5 s | Most of the knob's travel goes to short times, where small changes matter most. |
+| Tail length reported to the DAW is the release time | So the DAW keeps processing until notes have finished fading out. |
 
 ## Known limitations
 
-- **Stolen voices click.** The 17th simultaneous note (more likely with the sustain pedal down) cuts a voice instantly. Roadmap step 13 adds a crossfade.
+- **Stolen voices click.** The 17th simultaneous note cuts a voice instantly. That's more likely with the sustain pedal down, and now with long release times, since fading notes keep their voices busy. Roadmap step 13 adds a crossfade.
+- **The envelope's stages are straight lines.** Many synths curve them (exponential decay and release), which can sound more natural. Easy to add later as an option, without breaking projects.
 - **Brightness steps when bending saw or square** across a band-limiting level boundary. Crossfading between neighbouring levels would fix it if it's audible.
 - **Not yet checked by tools:** Steinberg's VST3 validator, and building on macOS or Linux. pluginval is run by hand, not from CTest.
 

@@ -32,7 +32,8 @@ void protectOutput (juce::AudioBuffer<float>& buffer)
 BoringSynthProcessor::BoringSynthProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
-    const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform };
+    const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform,
+                                            *ampAttack, *ampDecay, *ampSustain, *ampRelease };
 
     for (int i = 0; i < numVoices; ++i)
         synth.addVoice (new SynthVoice (waveformTables, voiceParameters));
@@ -72,7 +73,8 @@ void BoringSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
 double BoringSynthProcessor::getTailLengthSeconds() const
 {
-    return SynthVoice::releaseSeconds;
+    // How long notes keep sounding after their keys are released.
+    return ampRelease->load();
 }
 
 void BoringSynthProcessor::getStateInformation (juce::MemoryBlock& destData)

@@ -13,6 +13,7 @@ set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BandLimitedWaveTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Envelope.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.h

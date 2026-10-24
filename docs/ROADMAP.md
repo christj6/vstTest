@@ -12,14 +12,14 @@ The plan for growing BoringSynth, one small step at a time, from a plain sine sy
 | 1. Parameters | 3. Parameter system and Volume · 4. Smoothing |
 | 2. Playing basics | 5. Velocity sensitivity · 6. Pitch bend and range · 7. Sustain pedal |
 | 3. Oscillator | 8. Split into files, `Oscillator` class · 9. Sine read from a wave table · 10. Band-limited table levels (FFT) · 11. Waveform choice: sine, triangle, saw, square |
+| 4. Amp envelope (in progress) | 12. ADSR amp envelope, our own `Envelope` class, with defaults that reproduce the old 5 ms fade |
 
 Along the way, the test tools also gained a reference render (`--record` / `--compare`) and named render options.
 
 ## Next
 
 **Phase 4: Amp envelope**
-- 12. ADSR on volume, replacing the 5 ms fade. Its defaults reproduce today's sound (instant attack, full sustain, ~5 ms release). Time knobs are skewed toward short times.
-- 13. Crossfade stolen voices, so the 17th note doesn't click.
+- 13. Crossfade stolen voices, so the 17th note doesn't click. Long releases make stealing more common.
 
 **Phase 5: Filter**
 - 14. Low-pass filter with Cutoff and Resonance (`juce::dsp::StateVariableTPTFilter`), per voice. Fully open by default, and stable at maximum resonance.

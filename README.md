@@ -1,13 +1,14 @@
 # BoringSynth
 
-A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, triangle, saw or square) at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, or editor window. It can play up to 16 notes at once. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
+A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, triangle, saw or square) at that key's pitch, shaped over time by an ADSR envelope. By default, a note starts at full level and stops 5 ms after you release the key. There is no filter or editor window yet. It can play up to 16 notes at once. The pitch wheel bends notes, and the sustain pedal holds them after you release the keys. Other MIDI controllers, including the sostenuto and soft pedals, are ignored.
 
-It has four parameters. With no editor window, your DAW shows them in its own generic controls for the plug-in. All of them can be automated and are saved with your project.
+It has eight parameters. With no editor window, your DAW shows them in its own generic controls for the plug-in. All of them can be automated and are saved with your project.
 
 - **Volume**, from -inf (silence) to +6 dB, default 0 dB. Changes glide over 20 ms, so fast moves and automation don't crackle.
 - **Velocity Sensitivity**, from 0 to 100 %, default 0 %. At 0 % every note plays at the same level however hard you hit the key. At 100 %, a note's level follows the standard General MIDI curve, (velocity / 127)², so velocity 64 is about 12 dB quieter. The hardest hit (velocity 127) is always full level. A note's level is set when it starts, so changing the sensitivity affects the next notes you play, not ones already sounding.
 - **Pitch Bend Range**, from 0 to 24 semitones, default 2. How far the pitch wheel bends notes, up or down. At 0 the wheel is ignored. Bends glide over 10 ms, so a keyboard that sends the wheel in coarse steps still bends smoothly. A note bent above half the sample rate (where it would distort) goes silent until it's bent back down.
 - **Waveform**: Sine (the default), Triangle, Saw or Square. All four are matched in loudness and band-limited, so even the highest notes stay clean instead of picking up harsh, unrelated tones (aliasing). Changing it during a note fades to the new waveform over 10 ms rather than clicking.
+- **Amp Attack, Amp Decay, Amp Sustain, Amp Release**: the envelope that shapes each note's level. Attack is how long a note takes to rise to full level (0 to 10 s, default 0: instant). Decay is how long it then takes to fall to the sustain level (5 ms to 10 s, default 200 ms). Sustain is the level it holds while the key is down (0 to 100 %, default 100 %). Release is how long it takes to fade out after the key is released (5 ms to 10 s, default 5 ms). The time knobs are skewed so their middle is half a second, giving most of their travel to short times. Changes apply to notes already playing; a change of sustain level glides over 20 ms.
 
 It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 
@@ -16,7 +17,8 @@ It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 | [`BoringSynthProcessor`](src/BoringSynthProcessor.cpp) | The plug-in itself: the audio callback, the Volume control, the output safety check, and saving and loading settings |
 | [`Parameters`](src/Parameters.cpp) | Every parameter's ID, range, default and display text |
 | [`Synth.h`](src/Synth.h) | JUCE's synthesiser, which turns MIDI into notes, with the sostenuto pedal switched off |
-| [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and release fade |
+| [`SynthVoice`](src/SynthVoice.cpp) | One playing note: its pitch, pitch bend, velocity and amp envelope |
+| [`Envelope.h`](src/Envelope.h) | The ADSR envelope: a note's level over time |
 | [`Oscillator.h`](src/Oscillator.h) | The waveform itself, one sample at a time, read from a wave table |
 | [`Waveforms`](src/Waveforms.cpp) | The four waveforms' shapes, their loudness matching, and the tables built from them |
 | [`BandLimitedWaveTable`](src/BandLimitedWaveTable.cpp) | A waveform as a ladder of wave tables with fewer and fewer high harmonics (built with an FFT), so each note reads one that doesn't alias |
@@ -121,7 +123,7 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity, pitch bend and Waveform, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Its oscillator tests check the wave table and oscillator on their own against `std::sin`, so any loss of accuracy shows up as a number. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity, pitch bend, Waveform and the amp envelope, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Its oscillator tests check the wave tables and oscillator on their own, against `std::sin` and for aliasing, so any loss of accuracy shows up as a number. Its envelope tests check each stage of the envelope sample by sample, including the cases that would click. Build it and run it with CTest, which comes with CMake:
 
 ```bash
 cmake --build build --config Release --target Tests

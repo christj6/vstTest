@@ -11,6 +11,7 @@ target_sources(Tests PRIVATE
     RenderTests.cpp
     ParameterTests.cpp
     OscillatorTests.cpp
+    EnvelopeTests.cpp
     ReferenceRender.cpp
     ${BORINGSYNTH_SOURCES})
 

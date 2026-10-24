@@ -63,8 +63,10 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     oscillator.setTable (getCurrentTable(), 0);
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
-    gain = 1.0f;
-    gainStep = 0.0f;
+
+    ampEnvelope.setSampleRate (sampleRate);
+    ampEnvelope.setSettings (getAmpEnvelopeSettings());
+    ampEnvelope.noteOn();
 
     // A note played while the wheel is already pushed starts at the bent pitch, not gliding to it.
     bendPosition = pitchWheelToBend (currentPitchWheelPosition);
@@ -76,7 +78,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
 {
     if (allowTailOff)
     {
-        gainStep = (float) (1.0 / (releaseSeconds * getSampleRate()));
+        ampEnvelope.noteOff();
         return;
     }
 
@@ -100,16 +102,18 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // A change of waveform during the note fades in rather than switching abruptly.
     oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
 
+    // Envelope knob moves apply to the note already playing.
+    ampEnvelope.setSettings (getAmpEnvelopeSettings());
+
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
-        const auto sample = gain * noteLevel * oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
+        const auto envelopeLevel = ampEnvelope.getNextSample();
+        const auto sample = envelopeLevel * noteLevel * oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample (ch, i, sample);
 
-        gain -= gainStep;
-
-        if (gain <= 0.0f)
+        if (! ampEnvelope.isActive())
         {
             clearCurrentNote();
             phaseDelta = 0.0;
@@ -126,6 +130,14 @@ double SynthVoice::getBendRatio() const
 const BandLimitedWaveTable& SynthVoice::getCurrentTable() const
 {
     return tables.get (juce::roundToInt (parameters.waveform.load()));
+}
+
+Envelope::Settings SynthVoice::getAmpEnvelopeSettings() const
+{
+    return { parameters.ampAttack.load(),
+             parameters.ampDecay.load(),
+             parameters.ampSustain.load() / 100.0f,
+             parameters.ampRelease.load() };
 }
 
 } // namespace boringsynth

@@ -11,6 +11,14 @@ constexpr const char* volumeId = "volume";
 constexpr const char* velocitySensitivityId = "velocitySensitivity";
 constexpr const char* pitchBendRangeId = "pitchBendRange";
 constexpr const char* waveformId = "waveform";
+
+// The amp (volume) envelope. "amp" because a filter envelope with its own attack, decay, sustain
+// and release comes later.
+constexpr const char* ampAttackId = "ampAttack";
+constexpr const char* ampDecayId = "ampDecay";
+constexpr const char* ampSustainId = "ampSustain";
+constexpr const char* ampReleaseId = "ampRelease";
+
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";
 
@@ -24,6 +32,16 @@ constexpr float maxVolumeDb = 6.0f;
 // Pitch bend range in semitones, either way. Two is the common default for synths.
 constexpr int maxPitchBendRange = 24;
 constexpr int defaultPitchBendRange = 2;
+
+// Envelope times in seconds. Decay and release never go below 5 ms, so a note can never jump in
+// level and click; an attack of 0 is fine, because every waveform starts at zero.
+constexpr float maxEnvelopeSeconds = 10.0f;
+constexpr float minDecaySeconds = 0.005f;
+constexpr float minReleaseSeconds = 0.005f;
+
+// The time knobs are skewed so the middle of their travel is half a second, giving most of the
+// knob to short times, where small changes matter most.
+constexpr float envelopeKnobCentreSeconds = 0.5f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

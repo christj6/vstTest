@@ -93,6 +93,47 @@ void testWaveformParameter()
     check (inOrder, "the waveform choices are Sine, Triangle, Saw and Square, in that order");
 }
 
+void testAmpEnvelopeParameters()
+{
+    auto processor = createProcessor();
+
+    // Spelled out on purpose, like 'volume' above. "amp" leaves room for a filter envelope.
+    bool allExist = true;
+
+    for (auto* id : { "ampAttack", "ampDecay", "ampSustain", "ampRelease" })
+        allExist = allExist && findParameter (*processor, id) != nullptr;
+
+    check (allExist, "parameter IDs 'ampAttack', 'ampDecay', 'ampSustain' and 'ampRelease' exist");
+
+    if (! allExist)
+        return;
+
+    // The defaults reproduce the plug-in before the envelope: instant, held, 5 ms release.
+    check (getParameter (*processor, "ampAttack") == 0.0f
+               && std::abs (getParameter (*processor, "ampSustain") - 100.0f) < 0.01f
+               && std::abs (getParameter (*processor, "ampRelease") - 0.005f) < 1.0e-6f,
+           "the amp envelope defaults to an instant attack, full sustain and a 5 ms release");
+
+    auto* attack = findParameter (*processor, "ampAttack");
+    auto* decay = findParameter (*processor, "ampDecay");
+    auto* release = findParameter (*processor, "ampRelease");
+
+    check (release->getText (release->getValue(), 20) == "5 ms" && attack->getText (attack->convertTo0to1 (1.5f), 20) == "1.50 s",
+           "times show in milliseconds under a second ('5 ms') and seconds above ('1.50 s')");
+    check (std::abs (attack->convertFrom0to1 (attack->getValueForText ("250 ms")) - 0.25f) < 0.001f
+               && std::abs (attack->convertFrom0to1 (attack->getValueForText ("2 s")) - 2.0f) < 0.001f,
+           "typing '250 ms' or '2 s' sets those times");
+    check (std::abs (attack->convertFrom0to1 (0.5f) - 0.5f) < 0.01f && std::abs (release->convertFrom0to1 (0.5f) - 0.5f) < 0.01f,
+           "the middle of a time knob is half a second, leaving most of its travel to short times");
+    check (std::abs (decay->convertFrom0to1 (0.0f) - 0.005f) < 1.0e-6f && std::abs (release->convertFrom0to1 (0.0f) - 0.005f) < 1.0e-6f
+               && std::abs (release->convertFrom0to1 (1.0f) - 10.0f) < 0.001f,
+           "decay and release go from 5 ms (so they never click) up to 10 s");
+
+    // The DAW is told how long notes keep sounding after their keys are released.
+    setParameter (*processor, "ampRelease", 2.0f);
+    check (std::abs (processor->getTailLengthSeconds() - 2.0) < 0.001, "the plug-in reports its release time as its tail length");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
@@ -100,6 +141,10 @@ void testStateRoundTrip()
     setParameter (*original, "velocitySensitivity", 75.0f);
     setParameter (*original, "pitchBendRange", 7.0f);
     setParameter (*original, "waveform", 2.0f);
+    setParameter (*original, "ampAttack", 0.03f);
+    setParameter (*original, "ampDecay", 1.25f);
+    setParameter (*original, "ampSustain", 40.0f);
+    setParameter (*original, "ampRelease", 3.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -117,6 +162,11 @@ void testStateRoundTrip()
     check (std::abs (restoredSensitivity - 75.0f) < 0.01f, "velocity sensitivity survives saving and reloading");
     check (std::abs (restoredRange - 7.0f) < 0.01f, "pitch bend range survives saving and reloading");
     check (std::abs (getParameter (*restored, "waveform") - 2.0f) < 0.01f, "the waveform choice (Saw) survives saving and reloading");
+    check (std::abs (getParameter (*restored, "ampAttack") - 0.03f) < 0.0001f
+               && std::abs (getParameter (*restored, "ampDecay") - 1.25f) < 0.0001f
+               && std::abs (getParameter (*restored, "ampSustain") - 40.0f) < 0.01f
+               && std::abs (getParameter (*restored, "ampRelease") - 3.0f) < 0.0001f,
+           "the amp envelope survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -131,6 +181,9 @@ void testStateFromOlderVersions()
     setParameter (*original, "velocitySensitivity", 75.0f);
     setParameter (*original, "pitchBendRange", 7.0f);
     setParameter (*original, "waveform", 2.0f);
+    setParameter (*original, "ampAttack", 0.03f);
+    setParameter (*original, "ampSustain", 40.0f);
+    setParameter (*original, "ampRelease", 3.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -142,7 +195,7 @@ void testStateFromOlderVersions()
         return;
     }
 
-    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform" })
+    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -160,6 +213,10 @@ void testStateFromOlderVersions()
            "an older project loads with the default pitch bend range of 2 semitones");
     check (std::abs (getParameter (*loaded, "waveform")) < 0.01f,
            "an older project loads with the sine, its only waveform back then");
+    check (getParameter (*loaded, "ampAttack") == 0.0f
+               && std::abs (getParameter (*loaded, "ampSustain") - 100.0f) < 0.01f
+               && std::abs (getParameter (*loaded, "ampRelease") - 0.005f) < 1.0e-6f,
+           "an older project loads with the envelope that reproduces its old sound");
 }
 
 void testOldAndInvalidState()
@@ -191,6 +248,7 @@ void runParameterTests()
     testVelocitySensitivityParameter();
     testPitchBendRangeParameter();
     testWaveformParameter();
+    testAmpEnvelopeParameters();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();

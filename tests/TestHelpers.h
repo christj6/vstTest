@@ -124,6 +124,7 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
 void runRenderTests();
 void runParameterTests();
 void runOscillatorTests();
+void runEnvelopeTests();
 
 // The reference render (ReferenceRender.cpp). Each returns the program's exit code.
 int recordReference (const char* path);
