@@ -1,6 +1,6 @@
 # Test
 
-A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops. There is no envelope, filter, parameter, or editor window. It can play up to 16 notes at once.
+A minimal VST3 instrument plug-in. Press a key and it plays a sine wave at that key's pitch. Release the key and it stops, with a 5 ms fade so it doesn't click. There is no envelope, filter, parameter, or editor window. It can play up to 16 notes at once, and ignores the sustain pedal and other MIDI controllers.
 
 The whole plug-in is in [`src/TestProcessor.cpp`](src/TestProcessor.cpp), built with [JUCE](https://juce.com) 9.0.3 and CMake.
 

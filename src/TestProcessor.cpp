@@ -1,12 +1,18 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 // A synth that does nothing but play a sine wave at the pitch of each held key.
-// No envelope, no parameters, no editor: note on starts the sine, note off stops it.
+// No envelope, no parameters, no editor: note on starts the sine, note off stops it
+// (with a 5 ms fade so the cut doesn't click).
 
 namespace
 {
 constexpr int numVoices = 16;
-constexpr float level = 0.2f; // fixed output level per note, leaves headroom for chords
+
+// Fixed output level per note. Eight notes peaking together reach 0.8, below full scale.
+constexpr float level = 0.1f;
+
+// Length of the fade-out on note off. Short enough to sound instant, long enough not to click.
+constexpr double releaseSeconds = 0.005;
 
 struct SineSound  : public juce::SynthesiserSound
 {
@@ -24,13 +30,33 @@ public:
 
     void startNote (int midiNote, float, juce::SynthesiserSound*, int) override
     {
+        const auto sampleRate = getSampleRate();
+        const auto frequency = juce::MidiMessage::getMidiNoteInHertz (midiNote);
+
+        // Stay silent if the host hasn't given us a sample rate yet, or if the note is at or
+        // above the Nyquist frequency and would alias. This also keeps phaseDelta below pi,
+        // so wrapping the phase once per sample is always enough.
+        if (sampleRate <= 0.0 || frequency >= 0.5 * sampleRate)
+        {
+            clearCurrentNote();
+            phaseDelta = 0.0;
+            return;
+        }
+
         phase = 0.0;
-        phaseDelta = juce::MathConstants<double>::twoPi
-                     * juce::MidiMessage::getMidiNoteInHertz (midiNote) / getSampleRate();
+        phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+        gain = 1.0f;
+        gainStep = 0.0f;
     }
 
-    void stopNote (float, bool) override
+    void stopNote (float, bool allowTailOff) override
     {
+        if (allowTailOff)
+        {
+            gainStep = (float) (1.0 / (releaseSeconds * getSampleRate()));
+            return;
+        }
+
         clearCurrentNote();
         phaseDelta = 0.0;
     }
@@ -45,7 +71,7 @@ public:
 
         for (int i = startSample; i < startSample + numSamples; ++i)
         {
-            const auto sample = level * (float) std::sin (phase);
+            const auto sample = gain * level * (float) std::sin (phase);
             phase += phaseDelta;
 
             if (phase >= juce::MathConstants<double>::twoPi)
@@ -53,12 +79,33 @@ public:
 
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
                 buffer.addSample (ch, i, sample);
+
+            gain -= gainStep;
+
+            if (gain <= 0.0f)
+            {
+                clearCurrentNote();
+                phaseDelta = 0.0;
+                break;
+            }
         }
     }
 
 private:
     double phase = 0.0;
     double phaseDelta = 0.0;
+    float gain = 0.0f;
+    float gainStep = 0.0f;
+};
+
+// JUCE's Synthesiser handles the sustain, sostenuto and soft pedals by default.
+// This plug-in ignores them: a note plays exactly as long as its key is held.
+class SineSynth  : public juce::Synthesiser
+{
+public:
+    void handleSustainPedal (int, bool) override {}
+    void handleSostenutoPedal (int, bool) override {}
+    void handleSoftPedal (int, bool) override {}
 };
 
 class TestProcessor  : public juce::AudioProcessor
@@ -69,7 +116,12 @@ public:
     {
         for (int i = 0; i < numVoices; ++i)
             synth.addVoice (new SineVoice());
+
         synth.addSound (new SineSound());
+
+        // By default the synth handles MIDI events up to 31 samples early to avoid tiny
+        // render chunks. Rendering in chunks of any size keeps note timing sample-accurate.
+        synth.setMinimumRenderingSubdivisionSize (1);
     }
 
     void prepareToPlay (double sampleRate, int) override { synth.setCurrentPlaybackSampleRate (sampleRate); }
@@ -86,6 +138,7 @@ public:
         juce::ScopedNoDenormals noDenormals;
         buffer.clear();
         synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
+        protectOutput (buffer);
     }
 
     juce::AudioProcessorEditor* createEditor() override { return nullptr; }
@@ -95,7 +148,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return releaseSeconds; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -107,7 +160,20 @@ public:
     void setStateInformation (const void*, int) override {}
 
 private:
-    juce::Synthesiser synth;
+    SineSynth synth;
+
+    // Last line of defence before audio leaves the plug-in. NaN or infinity would poison every
+    // effect after us, so it becomes silence; anything past full scale is clipped to it.
+    static void protectOutput (juce::AudioBuffer<float>& buffer)
+    {
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            auto* data = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                data[i] = std::isfinite (data[i]) ? juce::jlimit (-1.0f, 1.0f, data[i]) : 0.0f;
+        }
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TestProcessor)
 };
