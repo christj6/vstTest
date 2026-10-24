@@ -1,8 +1,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 // A synth that does nothing but play a sine wave at the pitch of each held key.
-// No envelope, no parameters, no editor: note on starts the sine, note off stops it
-// (with a 5 ms fade so the cut doesn't click).
+// No envelope and no editor: note on starts the sine, note off stops it (with a 5 ms fade so the
+// cut doesn't click). The only parameter is the output volume.
 
 namespace
 {
@@ -13,6 +13,19 @@ constexpr float level = 0.1f;
 
 // Length of the fade-out on note off. Short enough to sound instant, long enough not to click.
 constexpr double releaseSeconds = 0.005;
+
+// Parameter and state identifiers are saved in DAW projects. Changing one breaks every project
+// that uses it, so treat them as permanent.
+constexpr const char* volumeId = "volume";
+constexpr const char* stateTag = "Parameters";
+constexpr const char* stateVersionId = "stateVersion";
+
+// Bump this when the saved state changes in a way older versions need converting from.
+constexpr int currentStateVersion = 1;
+
+// Volume range in decibels. The minimum means silence.
+constexpr float minVolumeDb = -60.0f;
+constexpr float maxVolumeDb = 6.0f;
 
 struct SineSound  : public juce::SynthesiserSound
 {
@@ -138,6 +151,7 @@ public:
         juce::ScopedNoDenormals noDenormals;
         buffer.clear();
         synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
+        buffer.applyGain (juce::Decibels::decibelsToGain (volumeDb->load(), minVolumeDb));
         protectOutput (buffer);
     }
 
@@ -156,11 +170,53 @@ public:
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
-    void getStateInformation (juce::MemoryBlock&) override {}
-    void setStateInformation (const void*, int) override {}
+    void getStateInformation (juce::MemoryBlock& destData) override
+    {
+        auto state = parameters.copyState();
+        state.setProperty (stateVersionId, currentStateVersion, nullptr);
+
+        if (const auto xml = state.createXml())
+            copyXmlToBinary (*xml, destData);
+    }
+
+    void setStateInformation (const void* data, int sizeInBytes) override
+    {
+        // Projects saved before the plug-in had parameters hold no state, and anything that isn't
+        // our state is ignored. Either way the parameters keep their current values.
+        const auto xml = getXmlFromBinary (data, sizeInBytes);
+
+        if (xml == nullptr || ! xml->hasTagName (stateTag))
+            return;
+
+        parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    }
 
 private:
     SineSynth synth;
+    juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
+    std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
+
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
+    {
+        auto volumeToText = [] (float value, int)
+        {
+            return value <= minVolumeDb ? juce::String ("-inf") : juce::String (value, 1);
+        };
+
+        auto textToVolume = [] (const juce::String& text)
+        {
+            return text.trim().startsWithIgnoreCase ("-inf") ? minVolumeDb : text.getFloatValue();
+        };
+
+        return { std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { volumeId, 1 },
+                                                              "Volume",
+                                                              juce::NormalisableRange<float> (minVolumeDb, maxVolumeDb, 0.1f),
+                                                              0.0f,
+                                                              juce::AudioParameterFloatAttributes()
+                                                                  .withLabel ("dB")
+                                                                  .withStringFromValueFunction (volumeToText)
+                                                                  .withValueFromStringFunction (textToVolume)) };
+    }
 
     // Last line of defence before audio leaves the plug-in. NaN or infinity would poison every
     // effect after us, so it becomes silence; anything past full scale is clipped to it.

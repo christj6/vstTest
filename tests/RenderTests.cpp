@@ -1,65 +1,12 @@
-#include <juce_audio_utils/juce_audio_utils.h>
+#include "TestHelpers.h"
 
-#include <cstdio>
-#include <vector>
+// Render tests: each feeds the processor MIDI, renders audio, and checks the output.
 
-// Behaviour tests for the plug-in. Each test feeds the processor MIDI, renders audio, and checks
-// the output. The program's exit code is the number of failed checks, so CTest sees any failure.
-
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
-
+namespace testing
+{
 namespace
 {
 constexpr double testSampleRate = 48000.0;
-
-struct TimedMessage
-{
-    int samplePosition;
-    juce::MidiMessage message;
-};
-
-int failures = 0;
-
-void check (bool passed, const char* description)
-{
-    std::printf ("%s  %s\n", passed ? "PASS" : "FAIL", description);
-
-    if (! passed)
-        ++failures;
-}
-
-// Renders channel 0 of the plug-in's output. Events are given at absolute sample positions and are
-// delivered in whichever block they fall in, the way a host would.
-std::vector<float> render (double rate, int blockSize, int numSamples,
-                           const std::vector<TimedMessage>& events, bool prepare = true)
-{
-    std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
-
-    if (prepare)
-        processor->prepareToPlay (rate, blockSize);
-
-    std::vector<float> output;
-    juce::AudioBuffer<float> buffer (2, blockSize);
-
-    for (int blockStart = 0; blockStart < numSamples; blockStart += blockSize)
-    {
-        const auto numThisBlock = std::min (blockSize, numSamples - blockStart);
-        buffer.setSize (2, numThisBlock, false, false, true);
-
-        juce::MidiBuffer midi;
-
-        for (const auto& event : events)
-            if (event.samplePosition >= blockStart && event.samplePosition < blockStart + numThisBlock)
-                midi.addEvent (event.message, event.samplePosition - blockStart);
-
-        processor->processBlock (buffer, midi);
-
-        for (int i = 0; i < numThisBlock; ++i)
-            output.push_back (buffer.getSample (0, i));
-    }
-
-    return output;
-}
 
 float peakOf (const std::vector<float>& samples)
 {
@@ -183,12 +130,35 @@ void testBlockSizeIndependence()
     check (blocksOf1 == blocksOf7 && blocksOf7 == blocksOf512,
            "output identical with block sizes 1, 7 and 512");
 }
+
+void testDefaultVolumeKeepsLevel()
+{
+    // Each note is 0.1 at full scale. At the default volume of 0 dB, one note should still be.
+    const auto notePeak = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
+    std::printf ("      one note at default volume peaks at %.4f\n", notePeak);
+    check (std::abs (notePeak - 0.1f) < 0.001f, "default volume (0 dB) leaves the level unchanged");
+}
+
+void testVolumeChangesLevel()
+{
+    const auto atDefault = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
+    const auto atMinus6 = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
+                                          [] (juce::AudioProcessor& p) { setParameter (p, "volume", -6.0f); }));
+    const auto ratio = atMinus6 / atDefault;
+    std::printf ("      -6 dB gives %.4f of the default level (expected 0.5012)\n", ratio);
+    check (std::abs (ratio - juce::Decibels::decibelsToGain (-6.0f)) < 0.001f, "volume -6 dB halves the level");
+}
+
+void testMinimumVolumeIsSilent()
+{
+    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
+                                [] (juce::AudioProcessor& p) { setParameter (p, "volume", -60.0f); });
+    check (peakOf (output) == 0.0f, "minimum volume is silent");
+}
 } // namespace
 
-int main()
+void runRenderTests()
 {
-    juce::ScopedJuceInitialiser_GUI juceInitialiser;
-
     testChordLevels();
     testNyquist();
     testNoSampleRate();
@@ -196,11 +166,8 @@ int main()
     testSustainPedalIgnored();
     testNoteTiming();
     testBlockSizeIndependence();
-
-    if (failures == 0)
-        std::printf ("ALL PASSED\n");
-    else
-        std::printf ("%d FAILED\n", failures);
-
-    return failures;
+    testDefaultVolumeKeepsLevel();
+    testVolumeChangesLevel();
+    testMinimumVolumeIsSilent();
 }
+} // namespace testing

@@ -1,11 +1,14 @@
 # The plug-in's test program. RenderTests.cpp renders audio through the processor and checks
-# the output; new kinds of tests go in new files here.
+# the output, ParameterTests.cpp checks parameters and saved state. New kinds of tests go in new
+# files here, with a run function declared in TestHelpers.h and called from Main.cpp.
 # Run with: ctest --test-dir build -C Release --output-on-failure
 juce_add_console_app(Tests
     PRODUCT_NAME "Tests")
 
 target_sources(Tests PRIVATE
+    Main.cpp
     RenderTests.cpp
+    ParameterTests.cpp
     ../src/BoringSynthProcessor.cpp)
 
 target_compile_definitions(Tests PRIVATE
