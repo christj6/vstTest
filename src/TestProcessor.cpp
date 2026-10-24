@@ -8,13 +8,13 @@ namespace
 constexpr int numVoices = 16;
 constexpr float level = 0.2f; // fixed output level per note, leaves headroom for chords
 
-struct SineSound : juce::SynthesiserSound
+struct SineSound  : public juce::SynthesiserSound
 {
     bool appliesToNote (int) override { return true; }
     bool appliesToChannel (int) override { return true; }
 };
 
-class SineVoice : public juce::SynthesiserVoice
+class SineVoice  : public juce::SynthesiserVoice
 {
 public:
     bool canPlaySound (juce::SynthesiserSound* sound) override
@@ -47,6 +47,7 @@ public:
         {
             const auto sample = level * (float) std::sin (phase);
             phase += phaseDelta;
+
             if (phase >= juce::MathConstants<double>::twoPi)
                 phase -= juce::MathConstants<double>::twoPi;
 
@@ -60,7 +61,7 @@ private:
     double phaseDelta = 0.0;
 };
 
-class TestProcessor : public juce::AudioProcessor
+class TestProcessor  : public juce::AudioProcessor
 {
 public:
     TestProcessor()
