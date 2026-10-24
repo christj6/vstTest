@@ -125,6 +125,22 @@ ctest --test-dir build -C Release --output-on-failure
 
 It prints `PASS` or `FAIL` for each check. CTest reports the whole program as failed if any check fails. Run the tests after every change to the plug-in.
 
+### Checking that a change doesn't alter the sound
+
+The test program can also record a fixed three-second render that exercises everything the plug-in does, and later compare against it. Record before making a change:
+
+```bash
+build/tests/Tests_artefacts/Release/Tests --record build/reference.bin
+```
+
+Then make the change, rebuild, and compare:
+
+```bash
+build/tests/Tests_artefacts/Release/Tests --compare build/reference.bin
+```
+
+It reports, for each part of the render, either `identical` or the largest difference in dBFS. A change meant to keep the sound the same (a refactor, a new feature at its default setting) should be identical, or within a tiny amount when the change is meant to be inaudible. The recording is only valid on the machine and build that made it, so it lives in `build/` and isn't committed.
+
 ## Checking commits for secrets
 
 The repo includes a Git hook, [`.githooks/pre-commit`](.githooks/pre-commit), that scans each commit for secrets (API keys, tokens, private keys) with [gitleaks](https://github.com/gitleaks/gitleaks) and blocks the commit if it finds one. To use it, install gitleaks (Windows: `scoop install gitleaks`, macOS: `brew install gitleaks`), then turn the hook on once in your clone:

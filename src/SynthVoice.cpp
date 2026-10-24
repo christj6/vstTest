@@ -32,11 +32,8 @@ float pitchWheelToBend (int wheelValue)
 
 } // namespace
 
-SynthVoice::SynthVoice (const WaveTable& waveTable,
-                        const std::atomic<float>& velocitySensitivityPercent,
-                        const std::atomic<float>& pitchBendRangeSemitones)
-    : velocitySensitivity (velocitySensitivityPercent),
-      pitchBendRange (pitchBendRangeSemitones),
+SynthVoice::SynthVoice (const WaveTable& waveTable, const VoiceParameters& voiceParameters)
+    : parameters (voiceParameters),
       oscillator (waveTable)
 {
 }
@@ -60,7 +57,7 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
 
     oscillator.reset();
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
-    noteLevel = level * velocityToGain (velocity, velocitySensitivity.load() / 100.0f);
+    noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
     gain = 1.0f;
     gainStep = 0.0f;
 
@@ -115,7 +112,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
 
 double SynthVoice::getBendRatio() const
 {
-    return std::exp2 (bendPosition * pitchBendRange.load() / 12.0);
+    return std::exp2 (bendPosition * parameters.pitchBendRange.load() / 12.0);
 }
 
 } // namespace boringsynth

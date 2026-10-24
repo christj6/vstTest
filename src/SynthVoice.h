@@ -14,6 +14,14 @@ struct SynthSound  : public juce::SynthesiserSound
     bool appliesToChannel (int) override { return true; }
 };
 
+// The plug-in's parameters a voice reads, as the processor's live, thread-safe values. A new
+// parameter that voices need goes here, and where the processor fills this in.
+struct VoiceParameters
+{
+    const std::atomic<float>& velocitySensitivity; // 0 to 100 %, read when each note starts
+    const std::atomic<float>& pitchBendRange;      // semitones, read on every block
+};
+
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
 // and faded out over a few milliseconds when the note ends.
 class SynthVoice  : public juce::SynthesiserVoice
@@ -22,12 +30,9 @@ public:
     // Length of the fade-out on note off. Short enough to sound instant, long enough not to click.
     static constexpr double releaseSeconds = 0.005;
 
-    // waveTable is the waveform the voice plays; it must outlive the voice. The others are the
-    // plug-in's parameters this voice reads: velocity sensitivity (0 to 100 %), read when each note
-    // starts, and pitch bend range (semitones), read on every block.
-    SynthVoice (const WaveTable& waveTable,
-                const std::atomic<float>& velocitySensitivityPercent,
-                const std::atomic<float>& pitchBendRangeSemitones);
+    // waveTable is the waveform the voice plays. The table and the parameter values must outlive
+    // the voice; the struct itself is copied.
+    SynthVoice (const WaveTable& waveTable, const VoiceParameters& voiceParameters);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;
     void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;
@@ -37,8 +42,7 @@ public:
     void renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples) override;
 
 private:
-    const std::atomic<float>& velocitySensitivity;
-    const std::atomic<float>& pitchBendRange;
+    VoiceParameters parameters;
     Oscillator oscillator;
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity

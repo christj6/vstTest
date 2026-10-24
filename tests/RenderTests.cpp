@@ -96,7 +96,7 @@ void testChordLevels()
     for (int i = 0; i < 8; ++i)
         cluster.push_back ({ 0, noteOn (60 + i) });
 
-    const auto clusterPeak = peakOf (render (testSampleRate, 512, 48000, cluster));
+    const auto clusterPeak = peakOf (render ({ .numSamples = 48000, .events = cluster }));
     std::printf ("      8-note cluster peak = %.3f\n", clusterPeak);
     check (clusterPeak < 1.0f, "8-note chord stays below full scale");
 
@@ -105,7 +105,7 @@ void testChordLevels()
     for (int i = 0; i < 16; ++i)
         chord.push_back ({ 0, noteOn (48 + i * 3) });
 
-    const auto chordPeak = peakOf (render (testSampleRate, 512, 48000, chord));
+    const auto chordPeak = peakOf (render ({ .numSamples = 48000, .events = chord }));
     std::printf ("      16-note chord peak = %.3f\n", chordPeak);
     check (chordPeak <= 1.0f, "16-note chord never exceeds full scale");
 }
@@ -113,15 +113,15 @@ void testChordLevels()
 void testNyquist()
 {
     // At 16 kHz, Nyquist is 8 kHz. Note 127 is about 12.5 kHz, note 100 about 2.6 kHz.
-    check (peakOf (render (16000.0, 512, 16000, { { 0, noteOn (127) } })) == 0.0f,
+    check (peakOf (render ({ .sampleRate = 16000.0, .numSamples = 16000, .events = { { 0, noteOn (127) } } })) == 0.0f,
            "note 127 at 16 kHz (above Nyquist) is silent");
-    check (peakOf (render (16000.0, 512, 16000, { { 0, noteOn (100) } })) > 0.0f,
+    check (peakOf (render ({ .sampleRate = 16000.0, .numSamples = 16000, .events = { { 0, noteOn (100) } } })) > 0.0f,
            "note 100 at 16 kHz (below Nyquist) plays");
 }
 
 void testNoSampleRate()
 {
-    const auto output = render (testSampleRate, 512, 4800, { { 0, noteOn (60) } }, false);
+    const auto output = render ({ .numSamples = 4800, .events = { { 0, noteOn (60) } }, .prepare = false });
     bool allFinite = true;
 
     for (auto s : output)
@@ -133,7 +133,7 @@ void testNoSampleRate()
 
 void testReleaseFade()
 {
-    const auto output = render (testSampleRate, 512, 9600, { { 0, noteOn (69) }, { 4800, noteOff (69) } });
+    const auto output = render ({ .numSamples = 9600, .events = { { 0, noteOn (69) }, { 4800, noteOff (69) } } });
     const auto tail = lastNonZeroIndex (output) - 4800;
     std::printf ("      release tail = %d samples (%.2f ms)\n", tail, tail / testSampleRate * 1000.0);
 
@@ -157,10 +157,11 @@ constexpr int endWithoutPedal = keyUp + 240;
 void testSustainPedalHoldsNotes()
 {
     // Pedal down before the note, key released at 4800, pedal released at 9600.
-    const auto output = render (testSampleRate, 512, 14400, { { 0, controller (sustainPedal, 127) },
-                                                              { 1, noteOn (69) },
-                                                              { keyUp, noteOff (69) },
-                                                              { 9600, controller (sustainPedal, 0) } });
+    const auto output = render ({ .numSamples = 14400,
+                                  .events = { { 0, controller (sustainPedal, 127) },
+                                              { 1, noteOn (69) },
+                                              { keyUp, noteOff (69) },
+                                              { 9600, controller (sustainPedal, 0) } } });
     const auto end = lastNonZeroIndex (output);
     std::printf ("      sustained note ends at sample %d (pedal released at 9600)\n", end);
     check (peakBetween (output, endWithoutPedal, 9600) > 0.09f, "the sustain pedal holds a note after its key is released");
@@ -169,44 +170,49 @@ void testSustainPedalHoldsNotes()
 
 void testSustainPedalPressedDuringNote()
 {
-    const auto output = render (testSampleRate, 512, 14400, { { 0, noteOn (69) },
-                                                              { 100, controller (sustainPedal, 127) },
-                                                              { keyUp, noteOff (69) },
-                                                              { 9600, controller (sustainPedal, 0) } });
+    const auto output = render ({ .numSamples = 14400,
+                                  .events = { { 0, noteOn (69) },
+                                              { 100, controller (sustainPedal, 127) },
+                                              { keyUp, noteOff (69) },
+                                              { 9600, controller (sustainPedal, 0) } } });
     check (peakBetween (output, endWithoutPedal, 9600) > 0.09f, "pressing the pedal while a key is held sustains that note");
 }
 
 void testSustainPedalAfterRelease()
 {
     // A pedal pressed after the key is released shouldn't bring the note back or hold its fade.
-    const auto output = render (testSampleRate, 512, 9600, { { 0, noteOn (69) },
-                                                             { keyUp, noteOff (69) },
-                                                             { 4900, controller (sustainPedal, 127) } });
+    const auto output = render ({ .numSamples = 9600,
+                                  .events = { { 0, noteOn (69) },
+                                              { keyUp, noteOff (69) },
+                                              { 4900, controller (sustainPedal, 127) } } });
     check (lastNonZeroIndex (output) <= endWithoutPedal, "pressing the pedal after a key is released doesn't hold the note");
 }
 
 void testSustainPedalThreshold()
 {
     // MIDI treats pedal values of 64 and up as down, and 63 and below as up.
-    const auto output = render (testSampleRate, 512, 9600, { { 0, controller (sustainPedal, 63) },
-                                                             { 1, noteOn (69) },
-                                                             { keyUp, noteOff (69) } });
+    const auto output = render ({ .numSamples = 9600,
+                                  .events = { { 0, controller (sustainPedal, 63) },
+                                              { 1, noteOn (69) },
+                                              { keyUp, noteOff (69) } } });
     check (lastNonZeroIndex (output) <= endWithoutPedal, "a pedal value of 63 counts as up");
 }
 
 void testSustainPedalIsPerChannel()
 {
-    const auto output = render (testSampleRate, 512, 9600, { { 0, controller (sustainPedal, 127, 2) },
-                                                             { 1, noteOn (69) },
-                                                             { keyUp, noteOff (69) } });
+    const auto output = render ({ .numSamples = 9600,
+                                  .events = { { 0, controller (sustainPedal, 127, 2) },
+                                              { 1, noteOn (69) },
+                                              { keyUp, noteOff (69) } } });
     check (lastNonZeroIndex (output) <= endWithoutPedal, "a sustain pedal on another MIDI channel doesn't hold the note");
 }
 
 void testSostenutoPedalIgnored()
 {
-    const auto output = render (testSampleRate, 512, 9600, { { 0, noteOn (69) },
-                                                             { 1, controller (sostenutoPedal, 127) },
-                                                             { keyUp, noteOff (69) } });
+    const auto output = render ({ .numSamples = 9600,
+                                  .events = { { 0, noteOn (69) },
+                                              { 1, controller (sostenutoPedal, 127) },
+                                              { keyUp, noteOff (69) } } });
     check (lastNonZeroIndex (output) <= endWithoutPedal, "the sostenuto pedal is ignored");
 }
 
@@ -214,8 +220,8 @@ void testNoteTiming()
 {
     // JUCE's Synthesiser, by default, handles an event less than 32 samples after the previous
     // split early. The second note here is 10 samples after the first, so it would start early.
-    const auto oneNote = render (testSampleRate, 512, 2048, { { 100, noteOn (60) } });
-    const auto twoNotes = render (testSampleRate, 512, 2048, { { 100, noteOn (60) }, { 110, noteOn (72) } });
+    const auto oneNote = render ({ .numSamples = 2048, .events = { { 100, noteOn (60) } } });
+    const auto twoNotes = render ({ .numSamples = 2048, .events = { { 100, noteOn (60) }, { 110, noteOn (72) } } });
 
     int firstDifference = -1;
 
@@ -247,27 +253,31 @@ void testBlockSizeIndependence()
                                              { 5001, noteOff (67) },
                                              { 6000, controller (sustainPedal, 0) } };
 
-    const auto blocksOf1 = render (testSampleRate, 1, 8000, events);
-    const auto blocksOf7 = render (testSampleRate, 7, 8000, events);
-    const auto blocksOf512 = render (testSampleRate, 512, 8000, events);
+    const auto blocksOf1 = render ({ .blockSize = 1, .numSamples = 8000, .events = events });
+    const auto blocksOf7 = render ({ .blockSize = 7, .numSamples = 8000, .events = events });
+    const auto blocksOf512 = render ({ .blockSize = 512, .numSamples = 8000, .events = events });
 
     check (blocksOf1 == blocksOf7 && blocksOf7 == blocksOf512,
            "output identical with block sizes 1, 7 and 512");
 }
 
+// One A4 note held for a second, the starting point for most of the level tests.
+const std::vector<TimedMessage> heldNote { { 0, noteOn (69) } };
+
 void testDefaultVolumeKeepsLevel()
 {
     // Each note is 0.1 at full scale. At the default volume of 0 dB, one note should still be.
-    const auto notePeak = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
+    const auto notePeak = peakOf (render ({ .numSamples = 48000, .events = heldNote }));
     std::printf ("      one note at default volume peaks at %.4f\n", notePeak);
     check (std::abs (notePeak - 0.1f) < 0.001f, "default volume (0 dB) leaves the level unchanged");
 }
 
 void testVolumeChangesLevel()
 {
-    const auto atDefault = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
-    const auto atMinus6 = peakOf (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
-                                          [] (juce::AudioProcessor& p) { setParameter (p, "volume", -6.0f); }));
+    const auto atDefault = peakOf (render ({ .numSamples = 48000, .events = heldNote }));
+    const auto atMinus6 = peakOf (render ({ .numSamples = 48000,
+                                            .events = heldNote,
+                                            .setUp = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -6.0f); } }));
     const auto ratio = atMinus6 / atDefault;
     std::printf ("      -6 dB gives %.4f of the default level (expected 0.5012)\n", ratio);
     check (std::abs (ratio - juce::Decibels::decibelsToGain (-6.0f)) < 0.001f, "volume -6 dB halves the level");
@@ -275,8 +285,9 @@ void testVolumeChangesLevel()
 
 void testMinimumVolumeIsSilent()
 {
-    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
-                                [] (juce::AudioProcessor& p) { setParameter (p, "volume", -60.0f); });
+    const auto output = render ({ .numSamples = 48000,
+                                  .events = heldNote,
+                                  .setUp = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -60.0f); } });
     check (peakOf (output) == 0.0f, "minimum volume is silent");
 }
 
@@ -286,19 +297,20 @@ constexpr int volumeChangeSample = 47 * 512;
 
 std::vector<float> renderVolumeDrop()
 {
-    return render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true, {},
-                   [] (juce::AudioProcessor& p, int blockStart)
-                   {
-                       if (blockStart == volumeChangeSample)
-                           setParameter (p, "volume", -60.0f);
-                   });
+    return render ({ .numSamples = 48000,
+                     .events = heldNote,
+                     .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                     {
+                         if (blockStart == volumeChangeSample)
+                             setParameter (p, "volume", -60.0f);
+                     } });
 }
 
 void testVolumeChangeIsSmooth()
 {
     // The sine itself changes by up to a certain amount per sample. A smoothed volume change
     // barely adds to that; an instant one jumps by up to the note's whole level (0.1).
-    const auto steady = largestStep (render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }));
+    const auto steady = largestStep (render ({ .numSamples = 48000, .events = heldNote }));
     const auto dropped = largestStep (renderVolumeDrop());
     std::printf ("      largest sample-to-sample step: %.5f steady, %.5f with the volume drop\n", steady, dropped);
     check (dropped <= steady * 1.05f, "a sudden volume change doesn't jump the output");
@@ -317,8 +329,9 @@ void testSavedVolumeDoesNotFadeIn()
 {
     // A volume set before playback starts (like one loaded from a project) should apply from the
     // first sample. 200 samples is under a fifth of the glide, but more than one cycle of the note.
-    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69) } }, true,
-                                [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); });
+    const auto output = render ({ .numSamples = 48000,
+                                  .events = heldNote,
+                                  .setUp = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); } });
     const auto startPeak = peakBetween (output, 0, 200);
     const auto expected = 0.1f * juce::Decibels::decibelsToGain (-12.0f);
     std::printf ("      first 200 samples peak at %.4f (expected %.4f)\n", startPeak, expected);
@@ -328,14 +341,18 @@ void testSavedVolumeDoesNotFadeIn()
 // The peak level of one note at the given velocity and velocity sensitivity (percent).
 float notePeak (int velocity, float sensitivity)
 {
-    return peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, velocity) } }, true,
-                           [sensitivity] (juce::AudioProcessor& p) { setParameter (p, "velocitySensitivity", sensitivity); }));
+    return peakOf (render ({ .numSamples = 9600,
+                             .events = { { 0, noteOn (69, velocity) } },
+                             .setUp = [sensitivity] (juce::AudioProcessor& p)
+                             {
+                                 setParameter (p, "velocitySensitivity", sensitivity);
+                             } }));
 }
 
 void testVelocityIgnoredByDefault()
 {
-    const auto soft = peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, 1) } }));
-    const auto hard = peakOf (render (testSampleRate, 512, 9600, { { 0, noteOn (69, 127) } }));
+    const auto soft = peakOf (render ({ .numSamples = 9600, .events = { { 0, noteOn (69, 1) } } }));
+    const auto hard = peakOf (render ({ .numSamples = 9600, .events = { { 0, noteOn (69, 127) } } }));
     std::printf ("      default sensitivity: velocity 1 peaks at %.4f, velocity 127 at %.4f\n", soft, hard);
     check (std::abs (soft - 0.1f) < 0.0005f && std::abs (hard - 0.1f) < 0.0005f,
            "velocity is ignored at the default sensitivity (0 %)");
@@ -364,12 +381,13 @@ void testHalfVelocitySensitivity()
 void testSensitivityChangeKeepsHeldNotes()
 {
     // A note's level is set when it starts. Turning sensitivity up mid-note shouldn't change it.
-    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69, 32) } }, true, {},
-                                [] (juce::AudioProcessor& p, int blockStart)
-                                {
-                                    if (blockStart == volumeChangeSample)
-                                        setParameter (p, "velocitySensitivity", 100.0f);
-                                });
+    const auto output = render ({ .numSamples = 48000,
+                                  .events = { { 0, noteOn (69, 32) } },
+                                  .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                  {
+                                      if (blockStart == volumeChangeSample)
+                                          setParameter (p, "velocitySensitivity", 100.0f);
+                                  } });
     const auto afterChange = peakBetween (output, volumeChangeSample, (int) output.size());
     check (std::abs (afterChange - 0.1f) < 0.0005f, "changing sensitivity doesn't affect a note already playing");
 }
@@ -379,11 +397,12 @@ juce::MidiMessage pitchWheel (int value) { return juce::MidiMessage::pitchWheel 
 // A4 (440 Hz) played with the wheel already at `wheelValue`; returns its frequency.
 double bentFrequency (int wheelValue, int bendRange = 2)
 {
-    const auto output = render (testSampleRate, 512, 48000, { { 0, pitchWheel (wheelValue) }, { 0, noteOn (69) } }, true,
-                                [bendRange] (juce::AudioProcessor& p)
-                                {
-                                    setParameter (p, "pitchBendRange", (float) bendRange);
-                                });
+    const auto output = render ({ .numSamples = 48000,
+                                  .events = { { 0, pitchWheel (wheelValue) }, { 0, noteOn (69) } },
+                                  .setUp = [bendRange] (juce::AudioProcessor& p)
+                                  {
+                                      setParameter (p, "pitchBendRange", (float) bendRange);
+                                  } });
     return frequencyBetween (output, 0, 48000, testSampleRate);
 }
 
@@ -413,7 +432,7 @@ void testBendBeforeNoteStartsBent()
 {
     // The wheel is already up when the note starts, so its first cycles should already be bent,
     // not gliding up from the unbent pitch.
-    const auto output = render (testSampleRate, 512, 4800, { { 0, pitchWheel (16383) }, { 0, noteOn (69) } });
+    const auto output = render ({ .numSamples = 4800, .events = { { 0, pitchWheel (16383) }, { 0, noteOn (69) } } });
     const auto firstPeriod = firstPeriodAfter (output, 0);
     std::printf ("      first cycle lasts %.2f samples (bent: 97.19, unbent: 109.09)\n", firstPeriod);
     check (std::abs (firstPeriod - 97.19) < 0.1, "a note played with the wheel already up starts bent");
@@ -422,7 +441,8 @@ void testBendBeforeNoteStartsBent()
 void testBendGlides()
 {
     // The wheel jumps fully up mid-note. The pitch should glide there over ~10 ms rather than jump.
-    const auto output = render (testSampleRate, 512, 48000, { { 0, noteOn (69) }, { volumeChangeSample, pitchWheel (16383) } });
+    const auto output = render ({ .numSamples = 48000,
+                                  .events = { { 0, noteOn (69) }, { volumeChangeSample, pitchWheel (16383) } } });
     const auto firstPeriod = firstPeriodAfter (output, volumeChangeSample);
     const auto settled = frequencyBetween (output, volumeChangeSample + 960, volumeChangeSample + 960 + 9600, testSampleRate);
     std::printf ("      first cycle after the jump lasts %.2f samples (unbent 109.09, bent 97.19); 20 ms later %.2f Hz\n",
@@ -435,8 +455,10 @@ void testBendAboveNyquist()
 {
     // At 16 kHz, note 100 (2637 Hz) bent up 24 semitones would be 10548 Hz, above Nyquist (8 kHz).
     // It should be silent while bent that far, then play again once the wheel comes back.
-    const auto output = render (16000.0, 512, 32000, { { 0, pitchWheel (16383) }, { 0, noteOn (100) }, { 16000, pitchWheel (8192) } }, true,
-                                [] (juce::AudioProcessor& p) { setParameter (p, "pitchBendRange", 24.0f); });
+    const auto output = render ({ .sampleRate = 16000.0,
+                                  .numSamples = 32000,
+                                  .events = { { 0, pitchWheel (16383) }, { 0, noteOn (100) }, { 16000, pitchWheel (8192) } },
+                                  .setUp = [] (juce::AudioProcessor& p) { setParameter (p, "pitchBendRange", 24.0f); } });
     bool allFinite = true;
 
     for (auto s : output)

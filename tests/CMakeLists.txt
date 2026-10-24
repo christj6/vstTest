@@ -11,6 +11,7 @@ target_sources(Tests PRIVATE
     RenderTests.cpp
     ParameterTests.cpp
     OscillatorTests.cpp
+    ReferenceRender.cpp
     ${BORINGSYNTH_SOURCES})
 
 # The oscillator tests use the plug-in's classes directly.
@@ -24,6 +25,7 @@ target_compile_definitions(Tests PRIVATE
 target_link_libraries(Tests
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)

@@ -33,40 +33,55 @@ struct TimedMessage
 using ProcessorSetUp = std::function<void (juce::AudioProcessor&)>;
 using BlockHook = std::function<void (juce::AudioProcessor&, int blockStart)>;
 
-// Renders channel 0 of the plug-in's output. Events are given at absolute sample positions and are
-// delivered in whichever block they fall in, the way a host would. setUp, if given, runs on the
-// new processor before any audio is rendered, e.g. to change parameters. beforeEachBlock, if
-// given, runs before each block with the block's first sample position, e.g. to automate a
-// parameter mid-render the way a host does.
-inline std::vector<float> render (double rate, int blockSize, int numSamples,
-                                  const std::vector<TimedMessage>& events,
-                                  bool prepare = true, const ProcessorSetUp& setUp = {},
-                                  const BlockHook& beforeEachBlock = {})
+// What to render. Give only the fields a test cares about, by name, in this order:
+//   render ({ .numSamples = 9600, .events = { { 0, noteOn (69) } } })
+struct RenderOptions
+{
+    double sampleRate = 48000.0;
+    int blockSize = 512;
+    int numSamples = 48000;
+
+    // MIDI at absolute sample positions, delivered in whichever block it falls in, as a host would.
+    std::vector<TimedMessage> events;
+
+    // Whether to call prepareToPlay first. Without it the plug-in has no sample rate.
+    bool prepare = true;
+
+    // Runs on the new processor before any audio is rendered, e.g. to change parameters.
+    ProcessorSetUp setUp;
+
+    // Runs before each block with the block's first sample position, e.g. to automate a parameter
+    // mid-render the way a host does.
+    BlockHook beforeEachBlock;
+};
+
+// Renders channel 0 of the plug-in's output.
+inline std::vector<float> render (const RenderOptions& options)
 {
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
 
-    if (setUp)
-        setUp (*processor);
+    if (options.setUp)
+        options.setUp (*processor);
 
-    if (prepare)
-        processor->prepareToPlay (rate, blockSize);
+    if (options.prepare)
+        processor->prepareToPlay (options.sampleRate, options.blockSize);
 
     std::vector<float> output;
-    juce::AudioBuffer<float> buffer (2, blockSize);
+    juce::AudioBuffer<float> buffer (2, options.blockSize);
 
-    for (int blockStart = 0; blockStart < numSamples; blockStart += blockSize)
+    for (int blockStart = 0; blockStart < options.numSamples; blockStart += options.blockSize)
     {
-        const auto numThisBlock = std::min (blockSize, numSamples - blockStart);
+        const auto numThisBlock = std::min (options.blockSize, options.numSamples - blockStart);
         buffer.setSize (2, numThisBlock, false, false, true);
 
         juce::MidiBuffer midi;
 
-        for (const auto& event : events)
+        for (const auto& event : options.events)
             if (event.samplePosition >= blockStart && event.samplePosition < blockStart + numThisBlock)
                 midi.addEvent (event.message, event.samplePosition - blockStart);
 
-        if (beforeEachBlock)
-            beforeEachBlock (*processor, blockStart);
+        if (options.beforeEachBlock)
+            options.beforeEachBlock (*processor, blockStart);
 
         processor->processBlock (buffer, midi);
 
@@ -109,5 +124,9 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
 void runRenderTests();
 void runParameterTests();
 void runOscillatorTests();
+
+// The reference render (ReferenceRender.cpp). Each returns the program's exit code.
+int recordReference (const char* path);
+int compareReference (const char* path);
 
 } // namespace testing
