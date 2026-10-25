@@ -1,7 +1,8 @@
 #include "TestHelpers.h"
 
 // With no arguments, runs every test. With --record <file> or --compare <file>, records or
-// compares the reference render instead (see ReferenceRender.cpp).
+// compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
+// plug-in's speed instead (see Benchmark.cpp).
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -12,13 +13,18 @@ int main (int argc, char** argv)
     if (argc == 3 && juce::String (argv[1]) == "--compare")
         return testing::compareReference (argv[2]);
 
+    if (argc == 2 && juce::String (argv[1]) == "--benchmark")
+        return testing::runBenchmark();
+
     if (argc != 1)
     {
-        std::printf ("usage: Tests [--record <file> | --compare <file>]\n");
+        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark]\n");
         return 1;
     }
 
-    testing::runRenderTests();
+    testing::runNoteTests();
+    testing::runControlTests();
+    testing::runSoundTests();
     testing::runParameterTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();

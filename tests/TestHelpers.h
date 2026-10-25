@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Measurements.h"
+
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include <cstdio>
@@ -29,6 +31,23 @@ struct TimedMessage
     int samplePosition;
     juce::MidiMessage message;
 };
+
+// The sample rate most tests render at (RenderOptions' default).
+constexpr double testSampleRate = 48000.0;
+
+inline juce::MidiMessage noteOn (int note, int velocity = 100)
+{
+    return juce::MidiMessage::noteOn (1, note, (juce::uint8) velocity);
+}
+
+inline juce::MidiMessage noteOff (int note) { return juce::MidiMessage::noteOff (1, note); }
+
+// One A4 note held for a second, the starting point for most of the level tests.
+inline const std::vector<TimedMessage> heldNote { { 0, noteOn (69) } };
+
+// A block start partway through a held note, where tests change something (a parameter, the pitch
+// wheel) the way a host delivers automation: at the start of a block.
+constexpr int changeSample = 47 * 512;
 
 using ProcessorSetUp = std::function<void (juce::AudioProcessor&)>;
 using BlockHook = std::function<void (juce::AudioProcessor&, int blockStart)>;
@@ -121,7 +140,9 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
     return 0.0f;
 }
 
-void runRenderTests();
+void runNoteTests();
+void runControlTests();
+void runSoundTests();
 void runParameterTests();
 void runOscillatorTests();
 void runEnvelopeTests();
@@ -129,5 +150,8 @@ void runEnvelopeTests();
 // The reference render (ReferenceRender.cpp). Each returns the program's exit code.
 int recordReference (const char* path);
 int compareReference (const char* path);
+
+// The CPU benchmark (Benchmark.cpp). Returns the program's exit code.
+int runBenchmark();
 
 } // namespace testing

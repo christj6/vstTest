@@ -123,7 +123,7 @@ Replace `Release` with `Debug` in the build command for a build that is easier t
 
 ## Running the tests
 
-The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out: levels, silence for notes the sample rate can't represent, no NaN output, the release fade, the sustain pedal, note timing, the effect of Volume, Velocity Sensitivity, pitch bend, Waveform and the amp envelope, and that the output doesn't depend on the host's block size. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Its oscillator tests check the wave tables and oscillator on their own, against `std::sin` and for aliasing, so any loss of accuracy shows up as a number. Its envelope tests check each stage of the envelope sample by sample, including the cases that would click. Build it and run it with CTest, which comes with CMake:
+The `tests` folder has a small test program, `Tests`. Its render tests play MIDI into the plug-in's audio code and check what comes out. The note tests cover levels, silence for notes the sample rate can't represent, no NaN output, the sustain pedal, note timing, voice stealing, and that the output doesn't depend on the host's block size. The control tests cover Volume, Velocity Sensitivity and pitch bend. The sound tests cover Waveform and the amp envelope. Its parameter tests check that parameters keep the IDs saved projects rely on, and that the plug-in's settings survive saving and reloading. Its oscillator tests check the wave tables and oscillator on their own, against `std::sin` and for aliasing, so any loss of accuracy shows up as a number. Its envelope tests check each stage of the envelope sample by sample, including the cases that would click. Build it and run it with CTest, which comes with CMake:
 
 ```bash
 cmake --build build --config Release --target Tests
@@ -147,6 +147,16 @@ build/tests/Tests_artefacts/Release/Tests --compare build/reference.bin
 ```
 
 It reports, for each part of the render, either `identical` or the largest difference in dBFS. A change meant to keep the sound the same (a refactor, a new feature at its default setting) should be identical, or within a tiny amount when the change is meant to be inaudible. The recording is only valid on the machine and build that made it, so it lives in `build/` and isn't committed.
+
+### Checking that a change doesn't slow it down
+
+The test program can also time the plug-in, playing through the same audio callback a DAW calls:
+
+```bash
+build/tests/Tests_artefacts/Release/Tests --benchmark
+```
+
+For three cases (no notes, 16 sine notes, and 16 saw notes with the pitch wheel moving), it reports how many times faster than real time the plug-in runs, and how much of each audio block's time budget it uses. Use the Release build, and compare runs on the same computer: the numbers vary by machine and by a few percent between runs.
 
 ## Checking commits for secrets
 

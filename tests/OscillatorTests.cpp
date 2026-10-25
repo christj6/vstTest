@@ -42,31 +42,6 @@ const boringsynth::BandLimitedWaveTable& bandLimitedSawtooth()
     return table;
 }
 
-double toDecibels (double ratio)
-{
-    return 20.0 * std::log10 (ratio);
-}
-
-// The magnitude of each harmonic (0 to size / 2) of one cycle stored as `size` samples.
-std::vector<double> harmonicsOf (const std::vector<float>& cycle)
-{
-    const auto size = (int) cycle.size();
-    const juce::dsp::FFT fft (juce::roundToInt (std::log2 (size)));
-    std::vector<juce::dsp::Complex<float>> in ((size_t) size), out ((size_t) size);
-
-    for (int i = 0; i < size; ++i)
-        in[(size_t) i] = cycle[(size_t) i];
-
-    fft.perform (in.data(), out.data(), false);
-
-    std::vector<double> magnitudes ((size_t) size / 2 + 1);
-
-    for (size_t k = 0; k < magnitudes.size(); ++k)
-        magnitudes[k] = std::abs (out[k]) / (size / 2.0);
-
-    return magnitudes;
-}
-
 // The samples a table holds, read back at their exact positions.
 std::vector<float> samplesOf (const boringsynth::WaveTable& table)
 {
@@ -302,16 +277,6 @@ const boringsynth::WaveformTables& waveformTables()
 const char* waveformName (int waveform)
 {
     return boringsynth::waveformNames[waveform].toRawUTF8();
-}
-
-double rmsOf (const std::vector<float>& samples)
-{
-    double sumOfSquares = 0.0;
-
-    for (auto s : samples)
-        sumOfSquares += (double) s * s;
-
-    return std::sqrt (sumOfSquares / (double) samples.size());
 }
 
 void testWaveformLoudness()

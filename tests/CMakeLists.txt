@@ -1,18 +1,23 @@
-# The plug-in's test program. RenderTests.cpp renders audio through the processor and checks
-# the output, ParameterTests.cpp checks parameters and saved state, and OscillatorTests.cpp checks
-# the oscillator on its own. New kinds of tests go in new files here, with a run function declared
-# in TestHelpers.h and called from Main.cpp.
+# The plug-in's test program. NoteTests.cpp, ControlTests.cpp and SoundTests.cpp render audio
+# through the whole plug-in and check the output; ParameterTests.cpp checks parameters and saved
+# state; OscillatorTests.cpp and EnvelopeTests.cpp check those classes on their own.
+# ReferenceRender.cpp is the --record / --compare check, and Benchmark.cpp is --benchmark.
+# Shared helpers are in TestHelpers.h and Measurements.h. New kinds of tests go in new files here,
+# with a run function declared in TestHelpers.h and called from Main.cpp.
 # Run with: ctest --test-dir build -C Release --output-on-failure
 juce_add_console_app(Tests
     PRODUCT_NAME "Tests")
 
 target_sources(Tests PRIVATE
     Main.cpp
-    RenderTests.cpp
+    NoteTests.cpp
+    ControlTests.cpp
+    SoundTests.cpp
     ParameterTests.cpp
     OscillatorTests.cpp
     EnvelopeTests.cpp
     ReferenceRender.cpp
+    Benchmark.cpp
     ${BORINGSYNTH_SOURCES})
 
 # The oscillator tests use the plug-in's classes directly.

@@ -95,6 +95,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 
 - **Tests:** `cmake --build build --config Release --target Tests`, then `ctest --test-dir build -C Release --output-on-failure`.
 - **Sound unchanged?** Record before a change and compare after; see the README.
+- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 13: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×.
 - **Prove a new test can fail:** break the code it protects on purpose, confirm the test fails, then restore the file and confirm it's byte-for-byte identical.
 - **pluginval** at strictness 10 on both Release and Debug builds, since Debug turns on JUCE's internal checks.
 - **Commits** are scanned for secrets by the gitleaks hook in `.githooks`.
