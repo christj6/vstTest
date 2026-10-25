@@ -40,6 +40,7 @@ constexpr const char* lfoRateId = "lfoRate";
 constexpr const char* lfoDepthId = "lfoDepth";
 constexpr const char* lfoDestinationId = "lfoDestination";
 constexpr const char* lfoShapeId = "lfoShape";
+constexpr const char* lfoRetriggerId = "lfoRetrigger";
 
 // How much the mod wheel adds to the LFO's depth.
 constexpr const char* modWheelLfoDepthId = "modWheelLfoDepth";

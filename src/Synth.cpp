@@ -109,6 +109,17 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
     }
 }
 
+void Synth::noteOn (int midiChannel, int midiNoteNumber, float velocity)
+{
+    // With retrigger on, every note starts the LFO from the beginning of its cycle. It fades from
+    // where it had got to over the same 5 ms as the saw's and square's jumps, so notes already
+    // sounding don't jump.
+    if (parameters.retrigger.load() >= 0.5f)
+        lfo.restart (juce::roundToInt (lfoJumpSeconds * getSampleRate()));
+
+    Synthesiser::noteOn (midiChannel, midiNoteNumber, velocity);
+}
+
 void Synth::handleController (int midiChannel, int controllerNumber, int controllerValue)
 {
     // MIDI's mod wheel, controller 1 (its fine-resolution half, controller 33, is ignored), and

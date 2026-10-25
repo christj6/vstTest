@@ -241,6 +241,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
 
+    // Off by default: the LFO runs freely, as it did before this existed.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { lfoRetriggerId, 1 }, "LFO Retrigger", false));
+
     return layout;
 }
 

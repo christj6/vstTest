@@ -55,6 +55,7 @@ struct LfoParameters
     const std::atomic<float>& destination;   // position in lfoDestinationNames
     const std::atomic<float>& shape;         // position in waveformNames
     const std::atomic<float>& modWheelDepth; // 0 to 100 %, added to depth with the wheel fully up
+    const std::atomic<float>& retrigger;     // 0 (free-running) or 1 (restarted by every note)
 };
 
 // JUCE's Synthesiser, plus the LFO that every voice shares, and the mod wheel that adds to its depth.
@@ -72,6 +73,7 @@ public:
     const Modulation& getModulation() const noexcept { return modulation; }
 
     void setCurrentPlaybackSampleRate (double newRate) override;
+    void noteOn (int midiChannel, int midiNoteNumber, float velocity) override;
     void handleController (int midiChannel, int controllerNumber, int controllerValue) override;
     void handleSostenutoPedal (int, bool) override {}
 

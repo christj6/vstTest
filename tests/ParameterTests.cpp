@@ -23,7 +23,7 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
                                         "filterVelocity",
                                         "lfoRate", "lfoDepth", "lfoDestination", "lfoShape",
-                                        "modWheelLfoDepth" };
+                                        "modWheelLfoDepth", "lfoRetrigger" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -363,6 +363,10 @@ void testLfoParameters()
                && std::abs (modWheel->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
                && modWheel->getText (modWheel->convertTo0to1 (25.0f), 20) == "25",
            "Mod Wheel LFO Depth runs from 0 to 100 %, defaults to 0 % (the wheel ignored) and displays as a number ('25')");
+
+    // Spelled out on purpose, like the IDs above.
+    check (findParameter (*processor, "lfoRetrigger") != nullptr, "parameter ID 'lfoRetrigger' exists");
+    check (getParameter (*processor, "lfoRetrigger") == 0.0f, "LFO Retrigger defaults to off (the LFO runs freely)");
 }
 
 void testStateRoundTrip()
@@ -392,6 +396,7 @@ void testStateRoundTrip()
     setParameter (*original, "lfoDestination", 2.0f);
     setParameter (*original, "lfoShape", 3.0f);
     setParameter (*original, "modWheelLfoDepth", 40.0f);
+    setParameter (*original, "lfoRetrigger", 1.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -432,6 +437,7 @@ void testStateRoundTrip()
     check (getParameter (*restored, "lfoDestination") == 2.0f, "the LFO destination (Filter Cutoff) survives saving and reloading");
     check (getParameter (*restored, "lfoShape") == 3.0f, "the LFO shape (Square) survives saving and reloading");
     check (std::abs (getParameter (*restored, "modWheelLfoDepth") - 40.0f) < 0.01f, "Mod Wheel LFO Depth survives saving and reloading");
+    check (getParameter (*restored, "lfoRetrigger") == 1.0f, "LFO Retrigger survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -498,6 +504,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoDestination", 1.0f);
     setParameter (*original, "lfoShape", 2.0f);
     setParameter (*original, "modWheelLfoDepth", 60.0f);
+    setParameter (*original, "lfoRetrigger", 1.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -542,6 +549,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "lfoDestination") == 0.0f, "an older project loads with the LFO on the pitch, its only destination back then");
     check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
     check (getParameter (*loaded, "modWheelLfoDepth") == 0.0f, "an older project loads with the mod wheel ignored, as it was");
+    check (getParameter (*loaded, "lfoRetrigger") == 0.0f, "an older project loads with the LFO running freely, as it did");
 }
 
 void testOldAndInvalidState()

@@ -455,6 +455,102 @@ void testModWheelOnAnyChannel()
 }
 
 //==============================================================================
+// Retrigger: every note restarting the LFO.
+
+ProcessorSetUp withRetriggeredLfo (float rateHz, float depthPercent, int destination = pitch)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        withLfo (rateHz, depthPercent, destination) (p);
+        setParameter (p, "lfoRetrigger", 1.0f);
+    };
+}
+
+void testRetriggerOffByDefault()
+{
+    const std::vector<TimedMessage> notes { { 0, noteOn (60) }, { 17000, noteOn (64) } };
+    const auto byDefault = render ({ .events = notes, .setUp = withLfo (1.0f, 50.0f) });
+    const auto switchedOff = render ({ .events = notes,
+                                       .setUp = [] (juce::AudioProcessor& p)
+                                       {
+                                           withLfo (1.0f, 50.0f) (p);
+                                           setParameter (p, "lfoRetrigger", 0.0f);
+                                       } });
+    check (byDefault == switchedOff, "LFO Retrigger is off by default: the LFO runs freely");
+}
+
+void testRetriggerStartsEachNoteAtTheBeginning()
+{
+    // A note started 0.37 s in, 1 Hz, 50 % on the pitch. With retrigger on, its vibrato starts from
+    // the beginning of the LFO's cycle: at its top (523 Hz) a quarter of a second after the note, and
+    // at its bottom (370 Hz) three quarters after. Running freely, it would be elsewhere.
+    constexpr int noteStart = 17760;
+    const std::vector<TimedMessage> note { { noteStart, noteOn (69) } };
+    const auto output = render ({ .numSamples = 72000, .events = note, .setUp = withRetriggeredLfo (1.0f, 50.0f) });
+    double worst = 0.0;
+
+    for (auto secondsAfterNote : { 0.25, 0.75 })
+    {
+        const auto from = noteStart + (int) (secondsAfterNote * testSampleRate) - 480;
+        const auto measured = frequencyBetween (output, from, from + 960, testSampleRate);
+        const auto expected = expectedVibratoFrequency (1.0, 3.0, from - noteStart, from - noteStart + 960, sine);
+        std::printf ("      %.2f s after the note: %.2f Hz (expected %.2f)\n", secondsAfterNote, measured, expected);
+        worst = std::max (worst, std::abs (measured / expected - 1.0));
+    }
+
+    check (worst < 0.002, "with retrigger on, each note starts the LFO from the beginning of its cycle");
+}
+
+// A held A4 with full-depth tremolo, and the LFO at the top of its cycle (full level) at sample 12345,
+// where very quiet notes start: one, or a chord of three. With retrigger on they restart the LFO,
+// which takes the held note's level from full towards half. Returns the largest sample-to-sample step
+// around the restart, against the largest in the 20 ms before it. (12345 doesn't land on one of A4's
+// zero crossings, which would hide a jump.)
+std::pair<float, float> stepsAroundRestart (int notesInChord)
+{
+    constexpr int restartSample = 12345;
+    std::vector<TimedMessage> events { { 0, noteOn (69) } };
+
+    for (int i = 0; i < notesInChord; ++i)
+        events.push_back ({ restartSample, noteOn (72 + 4 * i, 1) });
+
+    const auto output = render ({ .events = events,
+                                  .setUp = [] (juce::AudioProcessor& p)
+                                  {
+                                      withRetriggeredLfo ((float) (0.25 * testSampleRate / restartSample), 100.0f, volume) (p);
+                                      setParameter (p, "velocitySensitivity", 100.0f);
+                                  } });
+    const auto steady = largestStep (std::vector<float> (output.begin() + restartSample - 960, output.begin() + restartSample));
+    const auto atRestart = largestStep (std::vector<float> (output.begin() + restartSample - 10, output.begin() + restartSample + 480));
+    return { steady, atRestart };
+}
+
+void testRetriggerFadesNotesAlreadySounding()
+{
+    // The restart fades over 5 ms, so the held note's level glides down rather than dropping at once,
+    // and a chord's notes, each restarting the LFO on the same sample, fade once rather than cutting
+    // each other's fade short.
+    const auto [steady, oneNote] = stepsAroundRestart (1);
+    const auto [steadyChord, chord] = stepsAroundRestart (3);
+    std::printf ("      largest step: %.4f before a restart, %.4f around it (one note), %.4f around it (a chord)\n", steady, oneNote, chord);
+    check (oneNote <= steady * 1.1f && chord <= steadyChord * 1.1f,
+           "a note restarting the LFO fades it, so notes already sounding don't jump, even for a chord");
+}
+
+void testRetriggerBlockSizeIndependence()
+{
+    const std::vector<TimedMessage> events { { 3, noteOn (60) }, { 1000, noteOn (64) }, { 5003, noteOn (67) }, { 5003, noteOn (71) } };
+    const auto setUp = withRetriggeredLfo (6.0f, 60.0f, volume);
+    auto renderInBlocksOf = [&] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize, .numSamples = 8000, .events = events, .setUp = setUp });
+    };
+    const auto blocksOf1 = renderInBlocksOf (1);
+    check (blocksOf1 == renderInBlocksOf (7) && blocksOf1 == renderInBlocksOf (512) && blocksOf1 == renderInBlocksOf (2048),
+           "with retrigger on, output is identical with block sizes 1, 7, 512 and 2048");
+}
+
+//==============================================================================
 // The Lfo class on its own.
 
 // The jump width, in radians, the synth gives the LFO at a rate: 5 ms of its cycle.
@@ -608,6 +704,44 @@ void testLfoShapeCrossfade()
     check (fading.getNextSample (phaseDelta, 240.0) == 0.0f, "after a reset the LFO starts again from phase 0");
 }
 
+void testLfoRestart()
+{
+    // A restart blends from the wave carrying on where it was to the wave starting again from phase 0,
+    // over the crossfade; then it's exactly the restarted wave. Restarting with no crossfade starts
+    // again at once.
+    constexpr int fadeLength = 240, restartAt = 1234;
+    const auto phaseDelta = juce::MathConstants<double>::twoPi * 3.0 / testSampleRate;
+    boringsynth::Lfo restarted, carriedOn, startedFresh;
+    float largestBlendError = 0.0f;
+    bool exactAfterFade = true;
+
+    for (int i = 0; i < 4000; ++i)
+    {
+        if (i == restartAt)
+            restarted.restart (fadeLength);
+
+        const auto out = restarted.getNextSample (phaseDelta, 240.0);
+        const auto from = carriedOn.getNextSample (phaseDelta, 240.0);
+        const auto to = i >= restartAt ? startedFresh.getNextSample (phaseDelta, 240.0) : 0.0f;
+
+        if (i >= restartAt && i < restartAt + fadeLength - 1)
+        {
+            const auto progress = (float) (i - restartAt + 1) / (float) fadeLength;
+            largestBlendError = std::max (largestBlendError, std::abs (out - (from + progress * (to - from))));
+        }
+        else if (i >= restartAt + fadeLength)
+        {
+            exactAfterFade = exactAfterFade && out == to;
+        }
+    }
+
+    check (largestBlendError < 1.0e-6f, "restarting the LFO blends from where it was to the restarted wave");
+    check (exactAfterFade, "after the crossfade the LFO is exactly the restarted wave");
+
+    restarted.restart (0);
+    check (restarted.getNextSample (phaseDelta, 240.0) == 0.0f, "restarting with no crossfade starts again at once");
+}
+
 } // namespace
 
 void runLfoTests()
@@ -635,10 +769,15 @@ void runLfoTests()
     testModWheelGlides();
     testResetAllControllersDropsTheWheel();
     testModWheelOnAnyChannel();
+    testRetriggerOffByDefault();
+    testRetriggerStartsEachNoteAtTheBeginning();
+    testRetriggerFadesNotesAlreadySounding();
+    testRetriggerBlockSizeIndependence();
     testLfoShapesAreExactAwayFromJumps();
     testLfoShapesReachExactlyOne();
     testLfoJumpsTakeFiveMs();
     testLfoShapeCrossfade();
+    testLfoRestart();
 }
 
 } // namespace testing
