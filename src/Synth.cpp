@@ -14,6 +14,9 @@ constexpr double lfoDepthSmoothingSeconds = 0.02;
 // How long a change of LFO destination takes to fade the LFO out of the old one and into the new.
 constexpr double lfoDestinationSwitchSeconds = 0.01;
 
+// How long a change of LFO shape takes to fade from the old shape to the new one.
+constexpr double lfoShapeCrossfadeSeconds = 0.01;
+
 // How far the LFO moves the pitch, in semitones either way, for a depth from 0 to 1. Squared, so
 // most of the knob goes to the small depths vibrato uses: 20 % is about half a semitone, and 100 %
 // is the full octave. At a depth of 0 it's exactly 0.
@@ -32,9 +35,8 @@ float lfoGain (float depth, float lfoValue) noexcept
 
 } // namespace
 
-Synth::Synth (const LfoShapeTables& lfoShapes, const LfoParameters& lfoParameters)
-    : parameters (lfoParameters),
-      lfo (lfoShapes.get (sineWaveform))
+Synth::Synth (const LfoParameters& lfoParameters)
+    : parameters (lfoParameters)
 {
 }
 
@@ -42,9 +44,10 @@ void Synth::setCurrentPlaybackSampleRate (double newRate)
 {
     Synthesiser::setCurrentPlaybackSampleRate (newRate);
 
-    // The LFO starts again from the beginning of its cycle, at the current depth rather than
-    // gliding to it.
+    // The LFO starts again from the beginning of its cycle, in its current shape and at the current
+    // depth rather than fading or gliding to them.
     lfo.reset();
+    lfo.setShape (getCurrentShape(), 0);
     lfoDepth.reset (newRate, lfoDepthSmoothingSeconds);
     lfoDepth.setCurrentAndTargetValue (parameters.depth.load() / 100.0f);
 
@@ -62,7 +65,11 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
     const auto currentSampleRate = getSampleRate();
     const auto lfoPhaseDelta = currentSampleRate > 0.0 ? juce::MathConstants<double>::twoPi * parameters.rate.load() / currentSampleRate
                                                        : 0.0;
+    const auto lfoJumpSamples = lfoJumpSeconds * currentSampleRate;
     lfoDepth.setTargetValue (parameters.depth.load() / 100.0f);
+
+    // A change of shape fades from the old one to the new one.
+    lfo.setShape (getCurrentShape(), juce::roundToInt (lfoShapeCrossfadeSeconds * currentSampleRate));
 
     // A change of destination crossfades from the old one to the new one.
     const auto destination = getCurrentDestination();
@@ -80,7 +87,7 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
         for (int i = 0; i < numThisTime; ++i)
         {
             const auto depth = lfoDepth.getNextValue();
-            const auto lfoValue = lfo.getNextSample (lfoPhaseDelta);
+            const auto lfoValue = lfo.getNextSample (lfoPhaseDelta, lfoJumpSamples);
             const auto pitchDepth = depth * destinationAmounts[(size_t) pitchDestination].getNextValue();
             const auto volumeDepth = depth * destinationAmounts[(size_t) volumeDestination].getNextValue();
             const auto cutoffDepth = depth * destinationAmounts[(size_t) cutoffDestination].getNextValue();
@@ -95,6 +102,12 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
         startSample += numThisTime;
         numSamples -= numThisTime;
     }
+}
+
+
+int Synth::getCurrentShape() const
+{
+    return juce::jlimit (0, waveformNames.size() - 1, juce::roundToInt (parameters.shape.load()));
 }
 
 int Synth::getCurrentDestination() const

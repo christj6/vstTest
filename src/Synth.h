@@ -53,6 +53,7 @@ struct LfoParameters
     const std::atomic<float>& rate;        // Hz
     const std::atomic<float>& depth;       // 0 to 100 %
     const std::atomic<float>& destination; // position in lfoDestinationNames
+    const std::atomic<float>& shape;       // position in waveformNames
 };
 
 // JUCE's Synthesiser, plus the LFO that every voice shares.
@@ -63,15 +64,18 @@ struct LfoParameters
 class Synth  : public juce::Synthesiser
 {
 public:
-    // lfoShapes holds the shapes the LFO can read. The tables and the parameter values must outlive
-    // the synth.
-    Synth (const LfoShapeTables& lfoShapes, const LfoParameters& lfoParameters);
+    // The parameter values must outlive the synth.
+    explicit Synth (const LfoParameters& lfoParameters);
 
     // The LFO's effect on the voices, for the samples they're rendering.
     const Modulation& getModulation() const noexcept { return modulation; }
 
     void setCurrentPlaybackSampleRate (double newRate) override;
     void handleSostenutoPedal (int, bool) override {}
+
+    // How long the saw's and square's jumps take, as ramps, in seconds: as long as the shortest
+    // release, so they don't click.
+    static constexpr double lfoJumpSeconds = 0.005;
 
 protected:
     using juce::Synthesiser::renderVoices;
@@ -81,7 +85,7 @@ private:
     LfoParameters parameters;
 
     // One LFO for every note, running freely whether or not notes are playing, like a hardware
-    // synth's. It reads the sine's plain table.
+    // synth's.
     Lfo lfo;
     juce::SmoothedValue<float> lfoDepth; // 0 to 1
 
@@ -91,6 +95,7 @@ private:
 
     Modulation modulation;
 
+    int getCurrentShape() const;
     int getCurrentDestination() const;
 };
 

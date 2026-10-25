@@ -34,21 +34,4 @@ private:
     std::vector<BandLimitedWaveTable> tables;
 };
 
-// A plain table for every waveform, for the LFO: each shape exactly as waveformShape gives it, so
-// every one stays within -1 to 1 and reaches both. They aren't loudness-matched, which scales the
-// triangle and saw past 1 and keeps the square short of it. They aren't band-limited either: an LFO
-// is far too slow to alias, and the levels with fewer harmonics overshoot the saw's and square's
-// edges. Built once when the plug-in loads.
-class LfoShapeTables
-{
-public:
-    LfoShapeTables();
-
-    // The table for a waveform's position in waveformNames. Out-of-range values give the sine.
-    const WaveTable& get (int waveform) const noexcept;
-
-private:
-    std::vector<WaveTable> tables;
-};
-
 } // namespace boringsynth

@@ -1,13 +1,12 @@
 #include "TestHelpers.h"
 
-#include "Lfo.h"
 #include "Oscillator.h"
 #include "Waveforms.h"
 
 #include <juce_dsp/juce_dsp.h>
 
 // Oscillator tests: the wave tables and the oscillator on their own, compared with std::sin and
-// checked for aliasing; and the LFO's plain shape tables, checked to stay within -1 to 1.
+// checked for aliasing.
 
 namespace testing
 {
@@ -390,104 +389,6 @@ void testCrossfadeBetweenTables()
     check (exactAfterFade, "after the crossfade the output is exactly the new waveform");
 }
 
-//==============================================================================
-const boringsynth::LfoShapeTables& lfoShapeTables()
-{
-    static const boringsynth::LfoShapeTables tables;
-    return tables;
-}
-
-// The lowest and highest values a table gives, read at a million phases over the whole cycle.
-std::pair<float, float> rangeOf (const boringsynth::WaveTable& table)
-{
-    auto lowest = table.getSample (0.0), highest = lowest;
-
-    for (int i = 0; i < 1000000; ++i)
-    {
-        const auto value = table.getSample (juce::MathConstants<double>::twoPi * i / 1000000.0);
-        lowest = std::min (lowest, value);
-        highest = std::max (highest, value);
-    }
-
-    return { lowest, highest };
-}
-
-void testLfoShapesStayInRange()
-{
-    // The LFO's depth, and every destination's range, assume it runs from -1 to 1. The notes' tables
-    // don't: to match the sine's loudness, their triangle and saw are scaled past 1 and their square
-    // is scaled short of it.
-    bool allInRange = true, allReachBothEnds = true;
-
-    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
-    {
-        const auto [lowest, highest] = rangeOf (lfoShapeTables().get (waveform));
-        const auto [noteLowest, noteHighest] = rangeOf (waveformTables().get (waveform).getLevel (0));
-        std::printf ("      %-8s LFO from %+.6f to %+.6f (the notes' table: %+.3f to %+.3f)\n",
-                     waveformName (waveform), lowest, highest, noteLowest, noteHighest);
-        allInRange = allInRange && lowest >= -1.0f && highest <= 1.0f;
-
-        // The saw's table holds 1023/1024 just before its jump, the closest sample to 1.
-        allReachBothEnds = allReachBothEnds && lowest <= -0.999f && highest >= 0.999f;
-    }
-
-    check (allInRange, "every LFO shape stays within -1 to 1");
-    check (allReachBothEnds, "every LFO shape reaches both -1 and 1");
-}
-
-void testLfoShapesAreTheShapesUnscaled()
-{
-    // Each LFO table holds the waveform's shape exactly: no loudness scaling, no band-limiting. And
-    // each is zero at phase 0, where the LFO starts.
-    float largestDifference = 0.0f;
-    bool allStartAtZero = true;
-
-    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
-    {
-        const auto samples = samplesOf (lfoShapeTables().get (waveform));
-
-        for (int i = 0; i < boringsynth::WaveTable::size; ++i)
-        {
-            const auto expected = boringsynth::waveformShape (waveform, juce::MathConstants<double>::twoPi * i / boringsynth::WaveTable::size);
-            largestDifference = std::max (largestDifference, std::abs (samples[(size_t) i] - expected));
-        }
-
-        allStartAtZero = allStartAtZero && lfoShapeTables().get (waveform).getSample (0.0) == 0.0f;
-    }
-
-    std::printf ("      LFO tables against the shapes: largest difference %.1e\n", largestDifference);
-    check (largestDifference < 1.0e-6f, "every LFO table holds its waveform's shape, unscaled and not band-limited");
-    check (allStartAtZero, "every LFO shape is exactly 0 at phase 0");
-    check (&lfoShapeTables().get (99) == &lfoShapeTables().get (0), "an out-of-range LFO shape gives the sine");
-}
-
-void testLfoMatchesSine()
-{
-    // At about 1 Hz (48,000 samples a cycle), for ten cycles, the LFO reading the sine table follows
-    // std::sin, and stays within -1 to 1 as its phase wraps around.
-    boringsynth::Lfo lfo (lfoShapeTables().get (0));
-    const auto phaseDelta = juce::MathConstants<double>::twoPi / 48000.0;
-    double largestError = 0.0;
-    bool inRange = true;
-
-    for (int i = 0; i < 480000; ++i)
-    {
-        const auto value = lfo.getNextSample (phaseDelta);
-        largestError = std::max (largestError, std::abs (value - std::sin (phaseDelta * i)));
-        inRange = inRange && value >= -1.0f && value <= 1.0f;
-    }
-
-    std::printf ("      LFO sine over ten cycles vs std::sin: largest error %.2e\n", largestError);
-    check (largestError < maxSineError && inRange, "the LFO reads its table at the phase it's given, cycle after cycle");
-
-    // A quarter of a cycle in, at the top of the sine, a reset takes it back to the start.
-    for (int i = 0; i < 12000; ++i)
-        lfo.getNextSample (phaseDelta);
-
-    lfo.reset();
-    check (lfo.getNextSample (phaseDelta) == 0.0f, "after a reset the LFO starts again from phase 0");
-}
-
 } // namespace
 
 void runOscillatorTests()
@@ -505,9 +406,6 @@ void runOscillatorTests()
     testWaveformShapes();
     testWaveformsDontAlias();
     testCrossfadeBetweenTables();
-    testLfoShapesStayInRange();
-    testLfoShapesAreTheShapesUnscaled();
-    testLfoMatchesSine();
 }
 
 } // namespace testing

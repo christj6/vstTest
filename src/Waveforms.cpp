@@ -64,17 +64,4 @@ const BandLimitedWaveTable& WaveformTables::get (int waveform) const noexcept
     return tables[(size_t) (juce::isPositiveAndBelow (waveform, (int) tables.size()) ? waveform : sineWaveform)];
 }
 
-LfoShapeTables::LfoShapeTables()
-{
-    tables.reserve ((size_t) waveformNames.size());
-
-    for (int waveform = 0; waveform < waveformNames.size(); ++waveform)
-        tables.emplace_back ([waveform] (double phase) { return waveformShape (waveform, phase); });
-}
-
-const WaveTable& LfoShapeTables::get (int waveform) const noexcept
-{
-    return tables[(size_t) (juce::isPositiveAndBelow (waveform, (int) tables.size()) ? waveform : sineWaveform)];
-}
-
 } // namespace boringsynth

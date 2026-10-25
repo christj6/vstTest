@@ -224,6 +224,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                               lfoDestinationNames,
                                                               pitchDestination));
 
+    // The same shapes as Waveform, in the same permanent order. Sine, the LFO's only shape before
+    // this existed.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { lfoShapeId, 1 },
+                                                              "LFO Shape",
+                                                              waveformNames,
+                                                              sineWaveform));
+
     return layout;
 }
 

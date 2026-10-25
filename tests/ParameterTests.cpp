@@ -22,7 +22,7 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
                                         "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
                                         "filterVelocity",
-                                        "lfoRate", "lfoDepth", "lfoDestination" };
+                                        "lfoRate", "lfoDepth", "lfoDestination", "lfoShape" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -334,6 +334,22 @@ void testLfoParameters()
 
     check (getParameter (*processor, "lfoDestination") == 0.0f, "the LFO destination defaults to the first choice (pitch)");
     check (inOrder, "the LFO destinations are Pitch, Volume and Filter Cutoff, in that order");
+
+    // Spelled out on purpose, like the IDs above.
+    auto* shape = findParameter (*processor, "lfoShape");
+    check (shape != nullptr, "parameter ID 'lfoShape' exists");
+
+    if (shape == nullptr)
+        return;
+
+    const juce::StringArray expectedShapes { "Sine", "Triangle", "Saw", "Square" };
+    bool shapesInOrder = true;
+
+    for (int i = 0; i < expectedShapes.size(); ++i)
+        shapesInOrder = shapesInOrder && shape->getText (shape->convertTo0to1 ((float) i), 20) == expectedShapes[i];
+
+    check (getParameter (*processor, "lfoShape") == 0.0f, "the LFO shape defaults to the first choice (sine)");
+    check (shapesInOrder, "the LFO shapes are Sine, Triangle, Saw and Square, in that order");
 }
 
 void testStateRoundTrip()
@@ -361,6 +377,7 @@ void testStateRoundTrip()
     setParameter (*original, "lfoRate", 0.7f);
     setParameter (*original, "lfoDepth", 35.0f);
     setParameter (*original, "lfoDestination", 2.0f);
+    setParameter (*original, "lfoShape", 3.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -399,6 +416,7 @@ void testStateRoundTrip()
     check (std::abs (getParameter (*restored, "lfoRate") - 0.7f) < 1.0e-4f && std::abs (getParameter (*restored, "lfoDepth") - 35.0f) < 0.01f,
            "the LFO's rate and depth survive saving and reloading");
     check (getParameter (*restored, "lfoDestination") == 2.0f, "the LFO destination (Filter Cutoff) survives saving and reloading");
+    check (getParameter (*restored, "lfoShape") == 3.0f, "the LFO shape (Square) survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -463,6 +481,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoRate", 0.7f);
     setParameter (*original, "lfoDepth", 35.0f);
     setParameter (*original, "lfoDestination", 1.0f);
+    setParameter (*original, "lfoShape", 2.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -505,6 +524,7 @@ void testStateFromOlderVersions()
     check (std::abs (getParameter (*loaded, "lfoRate") - 5.0f) < 1.0e-4f && getParameter (*loaded, "lfoDepth") == 0.0f,
            "an older project loads with the LFO at 5 Hz and no depth (no effect)");
     check (getParameter (*loaded, "lfoDestination") == 0.0f, "an older project loads with the LFO on the pitch, its only destination back then");
+    check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
 }
 
 void testOldAndInvalidState()
