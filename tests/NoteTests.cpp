@@ -246,16 +246,18 @@ void testStolenNoteFadesOut()
     check (afterFade < 1.0e-6f, "and it's silent 5 ms after it was stolen");
 }
 
-void testStolenNoteKeepsLfoPitch()
+// With the LFO sent to `destination` at `depthPercent`, and at `cyclePosition` (0 to 1) of its cycle
+// when a note is stolen: the largest difference, in the first half of the stolen note's fade, between
+// it and the unstolen note faded the same way. Near the top or bottom of its cycle the LFO barely
+// moves in that time, so the two should match.
+float stolenNoteDifferenceWithLfo (int destination, float depthPercent, double cyclePosition)
 {
-    // The LFO, at full depth, is at the top of its cycle (an octave up) when the note is stolen. As it
-    // fades, the stolen note should stay at that pitch, matching the unstolen note faded the same
-    // way, rather than dropping back an octave.
-    const auto withLfo = [] (juce::AudioProcessor& p)
+    const auto withLfo = [=] (juce::AudioProcessor& p)
     {
         quieter (p);
-        setParameter (p, "lfoRate", (float) (0.25 * testSampleRate / stealSample));
-        setParameter (p, "lfoDepth", 100.0f);
+        setParameter (p, "lfoRate", (float) (cyclePosition * testSampleRate / stealSample));
+        setParameter (p, "lfoDepth", depthPercent);
+        setParameter (p, "lfoDestination", (float) destination);
     };
     auto events = sixteenMiddleCs();
     events.push_back ({ stealSample, noteOn (64) });
@@ -265,7 +267,6 @@ void testStolenNoteKeepsLfoPitch()
     const auto withoutStolenNote = render ({ .numSamples = 9600, .events = eventsWithoutStolenNote, .setUp = withLfo });
     const auto unstolen = render ({ .numSamples = 9600, .events = { { 0, noteOn (60) } }, .setUp = withLfo });
 
-    const auto peak = 0.1f * juce::Decibels::decibelsToGain (-12.0f);
     float largestDifference = 0.0f;
 
     for (int i = 0; i < 120; ++i)
@@ -276,9 +277,21 @@ void testStolenNoteKeepsLfoPitch()
         largestDifference = std::max (largestDifference, std::abs (stolenNote - fade * unstolen[index]));
     }
 
-    std::printf ("      first half of the fade: the stolen note differs from the unstolen one by at most %.4f (its peak is %.4f)\n",
-                 largestDifference, peak);
-    check (largestDifference < 0.1f * peak, "a stolen note keeps the LFO's pitch as it fades");
+    return largestDifference;
+}
+
+void testStolenNoteKeepsLfoEffect()
+{
+    // Stolen at the top of a full-depth vibrato (an octave up), the note should stay there as it
+    // fades rather than dropping back an octave. Stolen at the bottom of a 50 % tremolo (half level),
+    // it should stay at half level rather than jumping to full.
+    const auto peak = 0.1f * juce::Decibels::decibelsToGain (-12.0f);
+    const auto pitchDifference = stolenNoteDifferenceWithLfo (0, 100.0f, 0.25);
+    const auto volumeDifference = stolenNoteDifferenceWithLfo (1, 50.0f, 0.75);
+    std::printf ("      first half of the fade: the stolen note differs from the unstolen one by at most %.4f with vibrato, "
+                 "%.4f with tremolo (its peak is %.4f)\n", pitchDifference, volumeDifference, peak);
+    check (pitchDifference < 0.1f * peak, "a stolen note keeps the LFO's pitch as it fades");
+    check (volumeDifference < 0.1f * peak, "a stolen note keeps the LFO's effect on its level as it fades");
 }
 
 void testAllSoundOffFades()
@@ -341,7 +354,7 @@ void runNoteTests()
     testBlockSizeIndependence();
     testVoiceStealDoesNotClick();
     testStolenNoteFadesOut();
-    testStolenNoteKeepsLfoPitch();
+    testStolenNoteKeepsLfoEffect();
     testAllSoundOffFades();
     testStolenNoteKeepsItsFilter();
 }

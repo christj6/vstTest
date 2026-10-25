@@ -53,7 +53,7 @@ struct VoiceParameters
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel
-// and the LFO, filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
+// and moved by the LFO, filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
 // time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
@@ -103,12 +103,14 @@ private:
     // Multiplies the note's frequency. Smoothed multiplicatively, so the glide is even in pitch.
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
     float lfoPitchRatio = 1.0f; // the LFO's last effect on the pitch, for a note that's cut off
+    float lfoGain = 1.0f;       // and on the level
 
     // The filter only runs while it's on, or fading in or out. Switching it on or off crossfades
     // between the unfiltered and filtered sound (filterMix 0 to 1), so it doesn't click.
     Filter filter;
     bool filterRunning = false;
     int filterUpdateCountdown = 0; // samples until the filter's coefficients are next worked out
+    bool lfoMovedCutoff = false;   // whether the LFO was moving the cutoff on the previous sample
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> filterCutoff { maxCutoffHz };
     juce::SmoothedValue<float> filterResonance; // 0 to 1
     juce::SmoothedValue<float> filterMix;
@@ -123,8 +125,8 @@ private:
     juce::SmoothedValue<float> filterEnvAmount; // octaves
 
     void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
-    void updateFilterTargets();
-    float applyFilter (float input, float filterEnvelopeLevel) noexcept;
+    void updateFilterTargets (int startSample);
+    float applyFilter (float input, float filterEnvelopeLevel, int sample) noexcept;
     int getCurrentFilterType() const;
     float getFilterCutoffTarget() const;
     double getBendRatio() const;

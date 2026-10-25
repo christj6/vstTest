@@ -268,6 +268,22 @@ void testLfoParameters()
            "the LFO rate displays in hertz ('5.00 Hz', '0.25 Hz') and accepts '2.5 Hz'");
     check (std::abs (depth->convertFrom0to1 (1.0f) - 100.0f) < 0.01f && depth->getText (depth->convertTo0to1 (50.0f), 20) == "50",
            "the LFO depth runs from 0 to 100 % and displays as a number ('50')");
+
+    // Spelled out on purpose, like the IDs above.
+    auto* destination = findParameter (*processor, "lfoDestination");
+    check (destination != nullptr, "parameter ID 'lfoDestination' exists");
+
+    if (destination == nullptr)
+        return;
+
+    const juce::StringArray expected { "Pitch", "Volume", "Filter Cutoff" };
+    bool inOrder = true;
+
+    for (int i = 0; i < expected.size(); ++i)
+        inOrder = inOrder && destination->getText (destination->convertTo0to1 ((float) i), 20) == expected[i];
+
+    check (getParameter (*processor, "lfoDestination") == 0.0f, "the LFO destination defaults to the first choice (pitch)");
+    check (inOrder, "the LFO destinations are Pitch, Volume and Filter Cutoff, in that order");
 }
 
 void testStateRoundTrip()
@@ -294,6 +310,7 @@ void testStateRoundTrip()
     setParameter (*original, "filterVelocity", 3.25f);
     setParameter (*original, "lfoRate", 0.7f);
     setParameter (*original, "lfoDepth", 35.0f);
+    setParameter (*original, "lfoDestination", 2.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -331,6 +348,7 @@ void testStateRoundTrip()
     check (std::abs (getParameter (*restored, "filterVelocity") - 3.25f) < 0.001f, "Filter Velocity survives saving and reloading");
     check (std::abs (getParameter (*restored, "lfoRate") - 0.7f) < 1.0e-4f && std::abs (getParameter (*restored, "lfoDepth") - 35.0f) < 0.01f,
            "the LFO's rate and depth survive saving and reloading");
+    check (getParameter (*restored, "lfoDestination") == 2.0f, "the LFO destination (Filter Cutoff) survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -356,6 +374,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "filterVelocity", 5.0f);
     setParameter (*original, "lfoRate", 0.7f);
     setParameter (*original, "lfoDepth", 35.0f);
+    setParameter (*original, "lfoDestination", 1.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -370,7 +389,7 @@ void testStateFromOlderVersions()
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
                       "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
                       "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
-                      "filterVelocity", "lfoRate", "lfoDepth" })
+                      "filterVelocity", "lfoRate", "lfoDepth", "lfoDestination" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -400,6 +419,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "filterVelocity") == 0.0f, "an older project loads with velocity not affecting the filter");
     check (std::abs (getParameter (*loaded, "lfoRate") - 5.0f) < 1.0e-4f && getParameter (*loaded, "lfoDepth") == 0.0f,
            "an older project loads with the LFO at 5 Hz and no depth (no effect)");
+    check (getParameter (*loaded, "lfoDestination") == 0.0f, "an older project loads with the LFO on the pitch, its only destination back then");
 }
 
 void testOldAndInvalidState()

@@ -1,6 +1,7 @@
 #include "TestHelpers.h"
 
-// LFO tests: vibrato from the LFO, rendered through the whole plug-in.
+// LFO tests: the LFO moving the pitch (vibrato), the volume (tremolo) or the filter cutoff, rendered
+// through the whole plug-in.
 
 namespace testing
 {
@@ -8,13 +9,22 @@ namespace testing
 namespace
 {
 
-ProcessorSetUp withLfo (float rateHz, float depthPercent)
+constexpr int pitch = 0, volume = 1, cutoff = 2;
+
+ProcessorSetUp withLfo (float rateHz, float depthPercent, int destination = pitch)
 {
     return [=] (juce::AudioProcessor& p)
     {
         setParameter (p, "lfoRate", rateHz);
         setParameter (p, "lfoDepth", depthPercent);
+        setParameter (p, "lfoDestination", (float) destination);
     };
+}
+
+// The LFO's value at a sample: a sine starting at the beginning of its cycle (rising) at sample 0.
+double lfoAt (double rateHz, int sample)
+{
+    return std::sin (juce::MathConstants<double>::twoPi * rateHz * sample / testSampleRate);
 }
 
 // The frequency an A4 note should average between two sample positions, with an LFO of the given
@@ -25,7 +35,7 @@ double expectedVibratoFrequency (double rateHz, double semitones, int from, int 
     double sum = 0.0;
 
     for (int i = from; i < to; ++i)
-        sum += 440.0 * std::exp2 (semitones * std::sin (juce::MathConstants<double>::twoPi * rateHz * i / testSampleRate) / 12.0);
+        sum += 440.0 * std::exp2 (semitones * lfoAt (rateHz, i) / 12.0);
 
     return sum / (to - from);
 }
@@ -127,6 +137,134 @@ void testLfoBlockSizeIndependence()
            "with the LFO on, output is identical with block sizes 1, 7, 512 and 2048");
 }
 
+//==============================================================================
+void testDefaultDestinationIsPitch()
+{
+    const auto byDefault = render ({ .events = heldNote,
+                                     .setUp = [] (juce::AudioProcessor& p)
+                                     {
+                                         setParameter (p, "lfoRate", 1.0f);
+                                         setParameter (p, "lfoDepth", 50.0f);
+                                     } });
+    const auto chosenPitch = render ({ .events = heldNote, .setUp = withLfo (1.0f, 50.0f, pitch) });
+    check (byDefault == chosenPitch, "the LFO's destination defaults to the pitch");
+}
+
+// The largest difference, over a whole second, between a tremolo note and the plain note scaled by
+// the level the LFO should give it: full at the LFO's peak, down to 1 - depth at its trough.
+float worstTremoloError (float depthPercent)
+{
+    const auto plain = render ({ .events = heldNote });
+    const auto tremolo = render ({ .events = heldNote, .setUp = withLfo (1.0f, depthPercent, volume) });
+    const auto depth = depthPercent / 100.0;
+    float worst = 0.0f;
+
+    for (int i = 0; i < (int) plain.size(); ++i)
+    {
+        const auto gain = 1.0 - depth * (1.0 - lfoAt (1.0, i)) / 2.0;
+        worst = std::max (worst, std::abs (tremolo[(size_t) i] - (float) (gain * plain[(size_t) i])));
+    }
+
+    std::printf ("      %.0f %% tremolo: at most %.1e from the expected level\n", depthPercent, worst);
+    return worst;
+}
+
+void testTremolo()
+{
+    // The LFO reads a wave table, within about 1.2e-6 of a true sine, so the note is too.
+    check (worstTremoloError (100.0f) < 1.0e-6f && worstTremoloError (50.0f) < 1.0e-6f,
+           "sent to the volume, the LFO swings the level between full and 1 - depth, sample by sample");
+}
+
+// How much the low-pass filter at 440 Hz turns down an A4 sine within 10 ms of `centre` (in
+// seconds), with the LFO at 1 Hz sent to the cutoff at the given depth, in dB.
+double cutoffLfoGainAt (const std::vector<float>& filtered, const std::vector<float>& unfiltered, double centre)
+{
+    const auto from = (int) (centre * testSampleRate) - 480;
+    return toDecibels (rmsBetween (filtered, from, from + 960) / rmsBetween (unfiltered, from, from + 960));
+}
+
+void testLfoOnCutoff()
+{
+    // At 50 % the cutoff moves 2 octaves either way from 440 Hz: up to 1760 Hz at a quarter of a
+    // second, where A4 passes almost untouched; through 440 Hz at half a second (3 dB down); and
+    // down to 110 Hz at three quarters, two octaves below A4 (about 24 dB down).
+    const auto unfiltered = render ({ .events = heldNote });
+    const auto filtered = render ({ .events = heldNote,
+                                    .setUp = [] (juce::AudioProcessor& p)
+                                    {
+                                        setParameter (p, "filterEnabled", 1.0f);
+                                        setParameter (p, "filterCutoff", 440.0f);
+                                        withLfo (1.0f, 50.0f, cutoff) (p);
+                                    } });
+    const auto top = cutoffLfoGainAt (filtered, unfiltered, 0.25);
+    const auto middle = cutoffLfoGainAt (filtered, unfiltered, 0.5);
+    const auto bottom = cutoffLfoGainAt (filtered, unfiltered, 0.75);
+    std::printf ("      cutoff LFO: %+.2f dB at its top, %+.2f dB in the middle, %+.2f dB at its bottom "
+                 "(expected about -0.02, -3.01, -24.1)\n", top, middle, bottom);
+    check (std::abs (top + 0.02) < 0.2 && std::abs (middle + 3.01) < 0.5 && std::abs (bottom + 24.1) < 1.0,
+           "sent to the filter cutoff, the LFO moves it 4 × depth octaves either way");
+}
+
+void testCutoffLfoNeedsTheFilter()
+{
+    // With the filter off there's no cutoff to move, so the LFO does nothing.
+    const auto plain = render ({ .events = heldNote });
+    const auto withCutoffLfo = render ({ .events = heldNote, .setUp = withLfo (3.0f, 100.0f, cutoff) });
+    check (plain == withCutoffLfo, "sent to the filter cutoff with the filter off, the LFO has no effect");
+}
+
+void testDestinationChangeCrossfades()
+{
+    // At full depth on the pitch, with the LFO at the bottom of its cycle (an octave down), switch it
+    // to the volume, where the bottom of its cycle is silence. Switching at once would drop the note
+    // to nothing in one sample; crossfading over 10 ms, it stays smooth.
+    const auto rateHz = (float) (0.75 * testSampleRate / changeSample);
+    const auto output = render ({ .events = heldNote,
+                                  .setUp = withLfo (rateHz, 100.0f, pitch),
+                                  .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                  {
+                                      if (blockStart == changeSample)
+                                          setParameter (p, "lfoDestination", (float) volume);
+                                  } });
+    const auto steady = largestStep (std::vector<float> (output.begin() + changeSample - 960, output.begin() + changeSample));
+    const auto atChange = largestStep (std::vector<float> (output.begin() + changeSample - 10, output.begin() + changeSample + 960));
+    std::printf ("      largest step: %.4f before switching pitch to volume, %.4f around the switch\n", steady, atChange);
+    check (atChange <= steady * 1.1f, "changing the LFO's destination during a note crossfades instead of jumping");
+}
+
+void testCutoffLfoBlockSizeIndependence()
+{
+    // The LFO moving the cutoff, then its depth turned to 0 at sample 14336, where blocks of 1, 7, 512
+    // and 2048 all start. The depth glides to 0 partway through a block, and the filter has to land on
+    // its final setting on that very sample, whatever the block size.
+    constexpr int stopSample = 7 * 2048;
+    const std::vector<TimedMessage> events { { 3, noteOn (45) }, { 1000, noteOn (52) } };
+    const auto setUp = [] (juce::AudioProcessor& p)
+    {
+        setParameter (p, "waveform", 2.0f);
+        setParameter (p, "filterEnabled", 1.0f);
+        setParameter (p, "filterCutoff", 600.0f);
+        setParameter (p, "filterResonance", 50.0f);
+        withLfo (3.0f, 60.0f, cutoff) (p);
+    };
+    const auto stopLfo = [] (juce::AudioProcessor& p, int blockStart)
+    {
+        if (blockStart == stopSample)
+            setParameter (p, "lfoDepth", 0.0f);
+    };
+    auto renderInBlocksOf = [&] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize, .numSamples = 20000, .events = events, .setUp = setUp, .beforeEachBlock = stopLfo });
+    };
+    const auto blocksOf1 = renderInBlocksOf (1);
+    const auto blocksOf7 = renderInBlocksOf (7);
+    const auto blocksOf512 = renderInBlocksOf (512);
+    const auto blocksOf2048 = renderInBlocksOf (2048);
+    check (blocksOf1 == blocksOf7 && blocksOf7 == blocksOf512 && blocksOf512 == blocksOf2048,
+           "with the LFO moving the cutoff and then stopping, output is identical with block sizes 1, 7, 512 and 2048");
+}
+
 } // namespace
 
 void runLfoTests()
@@ -138,6 +276,12 @@ void runLfoTests()
     testLfoIsSharedAndFreeRunning();
     testLfoDepthGlides();
     testLfoBlockSizeIndependence();
+    testDefaultDestinationIsPitch();
+    testTremolo();
+    testLfoOnCutoff();
+    testCutoffLfoNeedsTheFilter();
+    testDestinationChangeCrossfades();
+    testCutoffLfoBlockSizeIndependence();
 }
 
 } // namespace testing

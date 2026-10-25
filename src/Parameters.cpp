@@ -217,6 +217,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
 
+    // Pitch, the LFO's only destination before this existed. The choices are saved by position, so
+    // lfoDestinationNames' order is permanent.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { lfoDestinationId, 1 },
+                                                              "LFO Destination",
+                                                              lfoDestinationNames,
+                                                              pitchDestination));
+
     return layout;
 }
 

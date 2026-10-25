@@ -61,12 +61,11 @@ float blendFilterTypes (const Filter::Outputs& outputs, float lowPass, float hig
     return lowPass * outputs.lowPass + highPass * outputs.highPass + bandPass * outputs.bandPass;
 }
 
-// A cutoff moved by the filter envelope: up by amountOctaves when the envelope is at its peak (1),
-// not at all when it's at 0, and kept within the cutoff's range. With an amount of 0 it's exactly
-// the cutoff given.
-float envelopedCutoff (float cutoffHz, float amountOctaves, float envelopeLevel) noexcept
+// A cutoff moved by the filter envelope and the LFO, by `octaves` in all, and kept within the
+// cutoff's range. When neither moves it, it's exactly the cutoff given.
+float movedCutoff (float cutoffHz, float octaves) noexcept
 {
-    return std::clamp (cutoffHz * std::exp2 (amountOctaves * envelopeLevel), minCutoffHz, maxCutoffHz);
+    return std::clamp (cutoffHz * std::exp2 (octaves), minCutoffHz, maxCutoffHz);
 }
 
 } // namespace
@@ -129,10 +128,11 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     filterResonance.setCurrentAndTargetValue (parameters.filterResonance.load() / 100.0f);
     filterMix.reset (sampleRate, filterSwitchSeconds);
     filterMix.setCurrentAndTargetValue (filterOn ? 1.0f : 0.0f);
-    filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+    filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
                           Filter::resonanceToQ (filterResonance.getCurrentValue()));
     filterRunning = filterOn;
     filterUpdateCountdown = 0;
+    lfoMovedCutoff = false;
 
     const auto type = getCurrentFilterType();
 
@@ -166,7 +166,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                                     filterTypeAmounts[1].getCurrentValue(),
                                     filterTypeAmounts[2].getCurrentValue() },
                                   phaseDelta * frequencyRatio.getCurrentValue() * lfoPitchRatio,
-                                  noteLevel * ampEnvelope.getLevel(),
+                                  noteLevel * ampEnvelope.getLevel() * lfoGain,
                                   1.0f,
                                   (float) (1.0 / (cutOffFadeSeconds * getSampleRate())) };
     }
@@ -197,15 +197,17 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // Envelope and filter knob moves apply to the note already playing.
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
     filterEnvelope.setSettings (getFilterEnvelopeSettings());
-    updateFilterTargets();
+    updateFilterTargets (startSample);
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
         const auto envelopeLevel = ampEnvelope.getNextSample();
         const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
         lfoPitchRatio = modulation.getPitchRatio (i);
+        lfoGain = modulation.getGain (i);
         const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio);
-        const auto sample = envelopeLevel * noteLevel * applyFilter (oscillatorSample, filterEnvelopeLevel);
+        const auto filtered = applyFilter (oscillatorSample, filterEnvelopeLevel, i);
+        const auto sample = envelopeLevel * noteLevel * lfoGain * filtered;
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample (ch, i, sample);
@@ -252,7 +254,7 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
     }
 }
 
-void SynthVoice::updateFilterTargets()
+void SynthVoice::updateFilterTargets (int startSample)
 {
     const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
     filterCutoff.setTargetValue (getFilterCutoffTarget());
@@ -276,7 +278,7 @@ void SynthVoice::updateFilterTargets()
             amount.setCurrentAndTargetValue (amount.getTargetValue());
 
         filterEnvAmount.setCurrentAndTargetValue (filterEnvAmount.getTargetValue());
-        filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+        filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
                               Filter::resonanceToQ (filterResonance.getCurrentValue()));
         filterRunning = true;
     }
@@ -290,30 +292,38 @@ void SynthVoice::updateFilterTargets()
     // moving, though: block boundaries depend on the host, and the output mustn't.
     const auto filterEnvelopeHasEffect = filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f;
 
-    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing() && ! filterEnvelopeHasEffect)
-        filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing() && ! filterEnvelopeHasEffect
+        && ! modulation.movesCutoff (startSample))
+        filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
                               Filter::resonanceToQ (filterResonance.getCurrentValue()));
 
     filterMix.setTargetValue (filterOn ? 1.0f : 0.0f);
 }
 
-float SynthVoice::applyFilter (float input, float filterEnvelopeLevel) noexcept
+float SynthVoice::applyFilter (float input, float filterEnvelopeLevel, int sample) noexcept
 {
     const auto mix = filterMix.getNextValue();
 
     if (! filterRunning)
         return input;
 
-    // The cutoff moves while its knob or resonance glides, or while the filter envelope has any
-    // effect. Then the coefficients are worked out again every filterUpdateInterval samples, plus once
-    // more when everything stops, so the filter lands exactly on the final setting.
-    auto isMoving = [this]
+    // The cutoff moves while its knob or resonance glides, or while the filter envelope or the LFO
+    // has any effect. Then the coefficients are worked out again every filterUpdateInterval samples,
+    // plus once more when everything stops, so the filter lands exactly on the final setting. The LFO
+    // can stop moving it on any sample, so that's caught here, on that sample, rather than at the
+    // next block: block boundaries depend on the host.
+    const auto lfoMovesCutoff = modulation.movesCutoff (sample);
+    const auto lfoStopped = lfoMovedCutoff && ! lfoMovesCutoff;
+    lfoMovedCutoff = lfoMovesCutoff;
+
+    auto isMoving = [&]
     {
         return filterCutoff.isSmoothing() || filterResonance.isSmoothing()
-            || filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f;
+            || filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f
+            || lfoMovesCutoff;
     };
 
-    if (isMoving())
+    if (isMoving() || lfoStopped)
     {
         const auto cutoff = filterCutoff.getNextValue();
         const auto resonance = filterResonance.getNextValue();
@@ -321,7 +331,8 @@ float SynthVoice::applyFilter (float input, float filterEnvelopeLevel) noexcept
 
         if (--filterUpdateCountdown <= 0 || ! isMoving())
         {
-            filter.setCutoffAndQ (envelopedCutoff (cutoff, amount, filterEnvelopeLevel), Filter::resonanceToQ (resonance));
+            const auto octaves = amount * filterEnvelopeLevel + modulation.getCutoffOctaves (sample);
+            filter.setCutoffAndQ (movedCutoff (cutoff, octaves), Filter::resonanceToQ (resonance));
             filterUpdateCountdown = filterUpdateInterval;
         }
     }

@@ -39,6 +39,12 @@ constexpr const char* filterVelocityId = "filterVelocity";
 // move other things too.
 constexpr const char* lfoRateId = "lfoRate";
 constexpr const char* lfoDepthId = "lfoDepth";
+constexpr const char* lfoDestinationId = "lfoDestination";
+
+// What the LFO can move, in the order the LFO Destination parameter lists them. A DAW saves the
+// choice as its position in this list, so the order is permanent: new destinations go at the end.
+inline const juce::StringArray lfoDestinationNames { "Pitch", "Volume", "Filter Cutoff" };
+constexpr int pitchDestination = 0, volumeDestination = 1, cutoffDestination = 2;
 
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.
@@ -92,6 +98,10 @@ constexpr float defaultLfoRateHz = 5.0f;
 
 // How far the LFO at full depth moves the pitch, in semitones either way.
 constexpr float maxLfoPitchSemitones = 12.0f;
+
+// How far the LFO at full depth moves the filter cutoff, in octaves either way: an eight-octave
+// sweep, for the big "wobble" this is used for.
+constexpr float maxLfoCutoffOctaves = 4.0f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

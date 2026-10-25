@@ -8,11 +8,12 @@
 
 // A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
-// envelope. An LFO adds vibrato. No editor yet. The pitch wheel bends notes and the sustain pedal
-// holds them. The parameters are the output volume, velocity sensitivity, pitch bend range,
-// waveform, the amp envelope's attack, decay, sustain and release, the filter's on/off switch,
-// type, cutoff, resonance, key tracking, velocity amount, and its own envelope's attack, decay,
-// sustain, release and amount, and the LFO's rate and depth.
+// envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. No editor
+// yet. The pitch wheel bends notes and the sustain pedal holds them. The parameters are the output
+// volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
+// sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
+// amount, and its own envelope's attack, decay, sustain, release and amount, and the LFO's rate,
+// depth and destination.
 
 namespace boringsynth
 {
@@ -71,9 +72,10 @@ private:
     std::atomic<float>* filterEnvAmount = parameters.getRawParameterValue (filterEnvAmountId);
     std::atomic<float>* lfoRate = parameters.getRawParameterValue (lfoRateId);
     std::atomic<float>* lfoDepth = parameters.getRawParameterValue (lfoDepthId);
+    std::atomic<float>* lfoDestination = parameters.getRawParameterValue (lfoDestinationId);
 
     // The LFO reads the sine's table.
-    Synth synth { waveformTables.get (0), { *lfoRate, *lfoDepth } };
+    Synth synth { waveformTables.get (0), { *lfoRate, *lfoDepth, *lfoDestination } };
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

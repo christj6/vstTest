@@ -118,6 +118,19 @@ int runBenchmark()
           {
               setParameter (p, "waveform", 2.0f);
               setParameter (p, "lfoDepth", 20.0f);
+          } },
+
+        // The LFO sweeping the cutoff: every voice works out its filter coefficients again (every 8
+        // samples) all the time.
+        { "16 notes, saw, LFO on filter cutoff", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 2.0f);
+              setParameter (p, "filterEnabled", 1.0f);
+              setParameter (p, "filterCutoff", 400.0f);
+              setParameter (p, "filterResonance", 50.0f);
+              setParameter (p, "lfoDepth", 50.0f);
+              setParameter (p, "lfoDestination", 2.0f);
           } } };
 
     const auto blockBudgetMs = 1000.0 * benchmarkBlockSize / benchmarkSampleRate;
