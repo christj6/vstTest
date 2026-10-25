@@ -23,6 +23,7 @@ constexpr const char* filterEnabledId = "filterEnabled";
 constexpr const char* filterCutoffId = "filterCutoff";
 constexpr const char* filterResonanceId = "filterResonance";
 constexpr const char* filterTypeId = "filterType";
+constexpr const char* filterKeyTrackingId = "filterKeyTracking";
 
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.

@@ -40,6 +40,7 @@ struct VoiceParameters
     const std::atomic<float>& filterCutoff;        // Hz
     const std::atomic<float>& filterResonance;     // 0 to 100 %
     const std::atomic<float>& filterType;          // position in filterTypeNames
+    const std::atomic<float>& filterKeyTracking;   // 0 to 100 %
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
@@ -82,6 +83,7 @@ private:
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
+    int noteNumber = 60;       // the MIDI note playing, for the filter's key tracking
     Envelope ampEnvelope;
     std::optional<FadingNote> fadingNote;
 
@@ -105,6 +107,7 @@ private:
     void updateFilterTargets();
     float applyFilter (float input) noexcept;
     int getCurrentFilterType() const;
+    float getFilterCutoffTarget() const;
     double getBendRatio() const;
     const BandLimitedWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;

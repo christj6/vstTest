@@ -147,6 +147,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                               filterTypeNames,
                                                               lowPassType));
 
+    // How far the cutoff follows the note played: 0 % keeps it where the knob says for every note
+    // (the behaviour before this existed); 100 % moves it an octave for every octave played.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterKeyTrackingId, 1 },
+                                                             "Filter Key Tracking",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+
     return layout;
 }
 

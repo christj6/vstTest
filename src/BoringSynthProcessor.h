@@ -10,8 +10,8 @@
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. No editor yet. The pitch wheel bends notes and the sustain pedal holds them. The
 // parameters are the output volume, velocity sensitivity, pitch bend range, waveform, the amp
-// envelope's attack, decay, sustain and release, and the filter's on/off switch, type, cutoff and
-// resonance.
+// envelope's attack, decay, sustain and release, and the filter's on/off switch, type, cutoff,
+// resonance and key tracking.
 
 namespace boringsynth
 {
@@ -63,6 +63,7 @@ private:
     std::atomic<float>* filterCutoff = parameters.getRawParameterValue (filterCutoffId);
     std::atomic<float>* filterResonance = parameters.getRawParameterValue (filterResonanceId);
     std::atomic<float>* filterType = parameters.getRawParameterValue (filterTypeId);
+    std::atomic<float>* filterKeyTracking = parameters.getRawParameterValue (filterKeyTrackingId);
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

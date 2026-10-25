@@ -32,6 +32,10 @@ constexpr double filterSwitchSeconds = 0.01;
 // a moving filter several times over; 8 samples is under 0.2 ms, far too short to hear as steps.
 constexpr int filterUpdateInterval = 8;
 
+// The note at which key tracking leaves the cutoff exactly where the knob says: middle C. With key
+// tracking, notes above it open the filter further and notes below close it.
+constexpr int keyTrackingReferenceNote = 60;
+
 // A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
 // sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
 // about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
@@ -87,6 +91,7 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     oscillator.setTable (getCurrentTable(), 0);
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
+    noteNumber = midiNote;
 
     ampEnvelope.setSampleRate (sampleRate);
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
@@ -102,7 +107,7 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     filter.setSampleRate (sampleRate);
     filter.reset();
     filterCutoff.reset (sampleRate, filterSmoothingSeconds);
-    filterCutoff.setCurrentAndTargetValue (std::clamp (parameters.filterCutoff.load(), minCutoffHz, maxCutoffHz));
+    filterCutoff.setCurrentAndTargetValue (getFilterCutoffTarget());
     filterResonance.reset (sampleRate, filterSmoothingSeconds);
     filterResonance.setCurrentAndTargetValue (parameters.filterResonance.load() / 100.0f);
     filterMix.reset (sampleRate, filterSwitchSeconds);
@@ -226,7 +231,7 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
 void SynthVoice::updateFilterTargets()
 {
     const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
-    filterCutoff.setTargetValue (std::clamp (parameters.filterCutoff.load(), minCutoffHz, maxCutoffHz));
+    filterCutoff.setTargetValue (getFilterCutoffTarget());
     filterResonance.setTargetValue (parameters.filterResonance.load() / 100.0f);
 
     // A change of filter type crossfades from the old type's output to the new one's.
@@ -295,6 +300,16 @@ float SynthVoice::applyFilter (float input) noexcept
 int SynthVoice::getCurrentFilterType() const
 {
     return juce::jlimit (0, filterTypeNames.size() - 1, juce::roundToInt (parameters.filterType.load()));
+}
+
+// The cutoff knob's setting, moved by key tracking: at 100 % it moves an octave for every octave the
+// note is above or below middle C; at 0 % it stays exactly where the knob says.
+float SynthVoice::getFilterCutoffTarget() const
+{
+    const auto tracking = parameters.filterKeyTracking.load() / 100.0f;
+    const auto octavesFromReference = (float) (noteNumber - keyTrackingReferenceNote) / 12.0f;
+    const auto cutoff = parameters.filterCutoff.load() * std::exp2 (octavesFromReference * tracking);
+    return std::clamp (cutoff, minCutoffHz, maxCutoffHz);
 }
 
 void SynthVoice::setCurrentPlaybackSampleRate (double newRate)

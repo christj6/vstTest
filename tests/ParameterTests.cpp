@@ -180,6 +180,18 @@ void testFilterParameters()
 
     check (getParameter (*processor, "filterType") == 0.0f, "the filter type defaults to the first choice (low-pass)");
     check (inOrder, "the filter types are Low-pass, High-pass and Band-pass, in that order");
+
+    // Key tracking, spelled out on purpose like the IDs above.
+    auto* keyTracking = findParameter (*processor, "filterKeyTracking");
+    check (keyTracking != nullptr, "parameter ID 'filterKeyTracking' exists");
+
+    if (keyTracking == nullptr)
+        return;
+
+    check (getParameter (*processor, "filterKeyTracking") == 0.0f
+               && std::abs (keyTracking->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
+               && keyTracking->getText (keyTracking->convertTo0to1 (50.0f), 20) == "50",
+           "key tracking runs from 0 to 100 %, defaults to 0 % and displays as a number ('50')");
 }
 
 void testStateRoundTrip()
@@ -197,6 +209,7 @@ void testStateRoundTrip()
     setParameter (*original, "filterCutoff", 750.0f);
     setParameter (*original, "filterResonance", 65.0f);
     setParameter (*original, "filterType", 1.0f);
+    setParameter (*original, "filterKeyTracking", 80.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -222,8 +235,9 @@ void testStateRoundTrip()
     check (getParameter (*restored, "filterEnabled") == 1.0f
                && std::abs (getParameter (*restored, "filterCutoff") - 750.0f) < 0.5f
                && std::abs (getParameter (*restored, "filterResonance") - 65.0f) < 0.01f
-               && getParameter (*restored, "filterType") == 1.0f,
-           "the filter settings (including its type, high-pass) survive saving and reloading");
+               && getParameter (*restored, "filterType") == 1.0f
+               && std::abs (getParameter (*restored, "filterKeyTracking") - 80.0f) < 0.01f,
+           "the filter settings (including its type, high-pass, and key tracking) survive saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -244,6 +258,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "filterEnabled", 1.0f);
     setParameter (*original, "filterCutoff", 750.0f);
     setParameter (*original, "filterType", 2.0f);
+    setParameter (*original, "filterKeyTracking", 80.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -256,7 +271,7 @@ void testStateFromOlderVersions()
     }
 
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
-                      "filterEnabled", "filterCutoff", "filterResonance", "filterType" })
+                      "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -281,6 +296,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "filterEnabled") == 0.0f && std::abs (getParameter (*loaded, "filterCutoff") - 20000.0f) < 0.5f,
            "an older project loads with the filter off");
     check (getParameter (*loaded, "filterType") == 0.0f, "an older project loads with the low-pass filter type, its only type back then");
+    check (getParameter (*loaded, "filterKeyTracking") == 0.0f, "an older project loads with no key tracking");
 }
 
 void testOldAndInvalidState()

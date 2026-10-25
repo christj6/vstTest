@@ -276,6 +276,77 @@ void testFilterTypeChangeCrossfades()
     check (atChange <= steady * 1.1f, "changing the filter type during a note crossfades instead of jumping");
 }
 
+// How much a low-pass filter at cutoffHz, with the given key tracking, turns down a sine note, in dB.
+double keyTrackedGain (int note, float cutoffHz, float keyTrackingPercent)
+{
+    const std::vector<TimedMessage> events { { 0, noteOn (note) } };
+    const auto unfiltered = rmsBetween (render ({ .events = events }), 4800, 48000);
+    const auto filtered = rmsBetween (render ({ .events = events,
+                                                .setUp = [=] (juce::AudioProcessor& p)
+                                                {
+                                                    withFilter (cutoffHz, 0.0f) (p);
+                                                    setParameter (p, "filterKeyTracking", keyTrackingPercent);
+                                                } }),
+                                      4800, 48000);
+    return toDecibels (filtered / unfiltered);
+}
+
+// Middle C's frequency: with key tracking, the cutoff is exactly the knob's setting at middle C.
+constexpr float middleC = 261.63f;
+
+void testNoKeyTrackingByDefault()
+{
+    // With the cutoff at middle C and no key tracking, the cutoff stays put: two octaves below,
+    // C2 passes untouched; middle C is 3 dB down at the cutoff; two octaves above, C6 is 24 dB down.
+    const auto low = keyTrackedGain (36, middleC, 0.0f);
+    const auto middle = keyTrackedGain (60, middleC, 0.0f);
+    const auto high = keyTrackedGain (84, middleC, 0.0f);
+    std::printf ("      no key tracking: C2 %+.2f dB, C4 %+.2f dB, C6 %+.2f dB (expected about 0, -3.01, -24)\n", low, middle, high);
+    check (std::abs (low) < 0.1 && std::abs (middle + 3.01) < 0.15 && std::abs (high + 24.0) < 1.0,
+           "with no key tracking, the cutoff is the same for every note");
+}
+
+void testFullKeyTracking()
+{
+    // At 100 % the cutoff follows the keyboard exactly, so each note sits right at its own cutoff:
+    // all three are 3 dB down.
+    const auto low = keyTrackedGain (36, middleC, 100.0f);
+    const auto middle = keyTrackedGain (60, middleC, 100.0f);
+    const auto high = keyTrackedGain (84, middleC, 100.0f);
+    std::printf ("      100 %% key tracking: C2 %+.2f dB, C4 %+.2f dB, C6 %+.2f dB (expected -3.01 for all)\n", low, middle, high);
+    check (std::abs (low + 3.01) < 0.15 && std::abs (middle + 3.01) < 0.15 && std::abs (high + 3.01) < 0.15,
+           "at 100 % key tracking the cutoff moves an octave for every octave played");
+}
+
+void testHalfKeyTracking()
+{
+    // At 50 %, two octaves up moves the cutoff one octave, to 523 Hz: C6 (1046.5 Hz) is then an
+    // octave above its cutoff, about 12.3 dB down.
+    const auto high = keyTrackedGain (84, middleC, 50.0f);
+    std::printf ("      50 %% key tracking: C6 %+.2f dB (expected about -12.3)\n", high);
+    check (std::abs (high + 12.3) < 0.5, "at 50 % key tracking the cutoff moves half an octave for every octave played");
+}
+
+void testKeyTrackingStaysInRange()
+{
+    // Key tracking can't push the cutoff outside 20 Hz to 20 kHz: a high note with the cutoff already
+    // fully open plays unfiltered, and a low note with it fully closed stays finite.
+    const auto highOpen = keyTrackedGain (108, 20000.0f, 100.0f);
+    const auto lowClosed = render ({ .events = { { 0, noteOn (24) } },
+                                     .setUp = [] (juce::AudioProcessor& p)
+                                     {
+                                         withFilter (20.0f, 100.0f) (p);
+                                         setParameter (p, "filterKeyTracking", 100.0f);
+                                     } });
+    bool allFinite = true;
+
+    for (auto s : lowClosed)
+        allFinite = allFinite && std::isfinite (s);
+
+    std::printf ("      C8 with the cutoff fully open and 100 %% key tracking: %+.2f dB\n", highOpen);
+    check (std::abs (highOpen) < 0.5 && allFinite, "key tracking keeps the cutoff between 20 Hz and 20 kHz");
+}
+
 void testOpenFilterBarelyChanges()
 {
     // Switched on at its default, fully open, the filter should make almost no difference.
@@ -407,6 +478,10 @@ void runSoundTests()
     testHighPassRemovesLowHarmonics();
     testBandPassKeepsTheMiddle();
     testFilterTypeChangeCrossfades();
+    testNoKeyTrackingByDefault();
+    testFullKeyTracking();
+    testHalfKeyTracking();
+    testKeyTrackingStaysInRange();
 }
 
 } // namespace testing

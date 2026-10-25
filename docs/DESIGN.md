@@ -26,7 +26,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Filter type choices, in order | `Low-pass`, `High-pass`, `Band-pass`. Saved by position, so new types may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
@@ -92,6 +92,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 | Resonance 0–100 % maps to Q 0.707–10, evenly on a log scale | 0 % is flat (no peak); 100 % is a +20 dB peak. This filter can't self-oscillate at any finite Q, so there's no runaway. |
 | Cutoff 20 Hz – 20 kHz, knob centre about 632 Hz | The range of hearing, skewed so equal turns are equal steps in pitch. It's capped just below Nyquist at low sample rates. |
 | Cutoff and resonance glide over 20 ms; coefficients are recalculated every 8 samples while gliding | Avoids zipper noise. Recalculating takes a `tan` and a `pow`; doing it every sample made a moving filter cost 3.5× as much (8.4 % of a core at 16 voices against 3.9 %), and 8 samples (0.17 ms) is far too short to hear as steps. The last sample of a glide always lands exactly on the new setting. |
+| Key tracking 0–100 %, default 0 %, around middle C (MIDI 60) | At 100 % the cutoff moves an octave per octave played, so every note keeps the same tone; at 0 % (the old behaviour) it's fixed, so high notes sound duller. At middle C the cutoff is exactly the knob's setting. The tracked cutoff stays within 20 Hz – 20 kHz. At 0 % the cutoff is multiplied by exactly 1, so nothing changes. |
 
 ## Known limitations
 
@@ -101,6 +102,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 - **Brightness steps when bending saw or square** across a band-limiting level boundary. Crossfading between neighbouring levels would fix it if it's audible.
 - **High resonance can get loud.** A +20 dB peak on a strong harmonic can push the output past full scale, where the output guard clips it. Real synths often compensate by lowering the level as resonance rises; worth listening for.
 - **The filter is perfectly clean.** Analog filters, and many digital ones, saturate (distort gently) when driven hard, which many people like. Ours doesn't, which also keeps it linear.
+- **Key tracking follows the note played, not pitch bends.** A note bent up an octave keeps the cutoff of the key that was pressed. Some synths track the bent pitch; that could be added later.
 - **Not yet checked by tools:** Steinberg's VST3 validator, and building on macOS or Linux. pluginval is run by hand, not from CTest.
 
 ## Working on it
