@@ -48,8 +48,9 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
 private:
-    // Declared before the synth, so they outlive the voices that read them.
+    // Declared before the synth, so they outlive the voices and the LFO that read them.
     WaveformTables waveformTables;
+    LfoShapeTables lfoShapeTables;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
@@ -74,8 +75,7 @@ private:
     std::atomic<float>* lfoDepth = parameters.getRawParameterValue (lfoDepthId);
     std::atomic<float>* lfoDestination = parameters.getRawParameterValue (lfoDestinationId);
 
-    // The LFO reads the sine's table.
-    Synth synth { waveformTables.get (sineWaveform), { .rate = *lfoRate, .depth = *lfoDepth, .destination = *lfoDestination } };
+    Synth synth { lfoShapeTables, { .rate = *lfoRate, .depth = *lfoDepth, .destination = *lfoDestination } };
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

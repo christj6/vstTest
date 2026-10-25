@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Oscillator.h"
+#include "Lfo.h"
+#include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -62,8 +63,9 @@ struct LfoParameters
 class Synth  : public juce::Synthesiser
 {
 public:
-    // lfoShape is the wave table the LFO reads. It and the parameter values must outlive the synth.
-    Synth (const BandLimitedWaveTable& lfoShape, const LfoParameters& lfoParameters);
+    // lfoShapes holds the shapes the LFO can read. The tables and the parameter values must outlive
+    // the synth.
+    Synth (const LfoShapeTables& lfoShapes, const LfoParameters& lfoParameters);
 
     // The LFO's effect on the voices, for the samples they're rendering.
     const Modulation& getModulation() const noexcept { return modulation; }
@@ -79,8 +81,8 @@ private:
     LfoParameters parameters;
 
     // One LFO for every note, running freely whether or not notes are playing, like a hardware
-    // synth's. Its shape is read from a wave table, like a note's.
-    Oscillator lfo;
+    // synth's. It reads the sine's plain table.
+    Lfo lfo;
     juce::SmoothedValue<float> lfoDepth; // 0 to 1
 
     // How much of the LFO each destination gets (indexed by position in lfoDestinationNames): 1 for

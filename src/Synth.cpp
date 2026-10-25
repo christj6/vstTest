@@ -32,9 +32,9 @@ float lfoGain (float depth, float lfoValue) noexcept
 
 } // namespace
 
-Synth::Synth (const BandLimitedWaveTable& lfoShape, const LfoParameters& lfoParameters)
+Synth::Synth (const LfoShapeTables& lfoShapes, const LfoParameters& lfoParameters)
     : parameters (lfoParameters),
-      lfo (lfoShape)
+      lfo (lfoShapes.get (sineWaveform))
 {
 }
 
