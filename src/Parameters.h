@@ -19,6 +19,10 @@ constexpr const char* ampDecayId = "ampDecay";
 constexpr const char* ampSustainId = "ampSustain";
 constexpr const char* ampReleaseId = "ampRelease";
 
+constexpr const char* filterEnabledId = "filterEnabled";
+constexpr const char* filterCutoffId = "filterCutoff";
+constexpr const char* filterResonanceId = "filterResonance";
+
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";
 
@@ -42,6 +46,12 @@ constexpr float minReleaseSeconds = 0.005f;
 // The time knobs are skewed so the middle of their travel is half a second, giving most of the
 // knob to short times, where small changes matter most.
 constexpr float envelopeKnobCentreSeconds = 0.5f;
+
+// Filter cutoff in Hz, over the range of hearing. The knob is skewed so equal turns change the
+// cutoff by equal musical intervals: its middle is the geometric mean of the range, about 632 Hz.
+constexpr float minCutoffHz = 20.0f;
+constexpr float maxCutoffHz = 20000.0f;
+constexpr float cutoffKnobCentreHz = 632.46f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

@@ -9,7 +9,7 @@ The step-by-step plan is in [ROADMAP.md](ROADMAP.md).
 1. The DAW calls `BoringSynthProcessor::processBlock` with an empty buffer and the MIDI for that block.
 2. JUCE's `Synthesiser` (our subclass `Synth`) splits the block at each MIDI event and assigns notes to voices. It handles note on/off, voice stealing, the pitch wheel and the sustain pedal.
 3. Each playing `SynthVoice` asks its `Oscillator` for one sample at a time. The oscillator reads the current waveform's `BandLimitedWaveTable`, choosing the level whose harmonics all stay below Nyquist for the note's current pitch.
-4. The voice scales each sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. If the voice was just stolen for a new note, it also plays the old note underneath, fading it out over 5 ms (its "fading note"). The output is mono, written to every channel.
+4. If the filter is on, the voice runs each sample through its own `Filter` (each voice has one, so steps 16–18 can give each note its own cutoff). Then it scales the sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. If the voice was just stolen for a new note, it also plays the old note underneath, fading it out over 5 ms (its "fading note"). The output is mono, written to every channel.
 5. The processor applies the smoothed Volume, then `protectOutput`: NaN or infinity becomes silence, and anything past full scale is clipped to it. This is always the very last step.
 
 ### Who owns what
@@ -26,7 +26,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
 
@@ -82,6 +82,13 @@ Anything that needs real work (building tables now, loading wavetable files late
 | Time knobs 0 or 5 ms up to 10 s, skewed so the middle is 0.5 s | Most of the knob's travel goes to short times, where small changes matter most. |
 | Tail length reported to the DAW is the release time | So the DAW keeps processing until notes have finished fading out. |
 | A stolen voice fades its old note out over 5 ms, underneath the new note | JUCE's synth stops a stolen voice with no tail-off, and stopping a sounding note dead clicks. The voice keeps a snapshot of the old note (oscillator, pitch, level) in a slot that's part of the voice, so nothing is allocated, and fades it for the shortest release time. Stealing is the only way a note gets cut off; JUCE handles MIDI "all sound off" with a normal release. |
+| A filter on every voice, not one on the output | With identical settings, one filter on the mix would sound the same, since the filter is linear. But key tracking, the filter envelope and velocity → filter (steps 16–18) give each note its own cutoff, and each note should start with a clean filter rather than one still ringing from earlier notes. One filter shared by all voices is called "paraphonic": a distinct sound, but usually a hardware compromise. |
+| The filter has an on/off switch, off by default | A low-pass filter even fully open shifts the phase of high frequencies, so "always on, cutoff at 20 kHz" wouldn't reproduce the old sound exactly. Older projects load with it off, bit-for-bit unchanged. Serum and Vital also start with their filters off. Switching it during a note crossfades over 10 ms. |
+| Our own `Filter` class rather than `juce::dsp::StateVariableTPTFilter` | The same design (Simper's TPT state-variable filter, stable at any setting), but as a few plain numbers. JUCE's keeps its state in `std::vector`s, so copying it allocates, and a stolen voice's fading note copies its filter on the audio thread. It also gives band-pass and high-pass for step 15. |
+| Signal order: oscillator → filter → amp envelope | The standard subtractive synth order. The filter is linear, so this only matters once later steps make the filter's settings depend on the note. |
+| Resonance 0–100 % maps to Q 0.707–10, evenly on a log scale | 0 % is flat (no peak); 100 % is a +20 dB peak. This filter can't self-oscillate at any finite Q, so there's no runaway. |
+| Cutoff 20 Hz – 20 kHz, knob centre about 632 Hz | The range of hearing, skewed so equal turns are equal steps in pitch. It's capped just below Nyquist at low sample rates. |
+| Cutoff and resonance glide over 20 ms; coefficients are recalculated every 8 samples while gliding | Avoids zipper noise. Recalculating takes a `tan` and a `pow`; doing it every sample made a moving filter cost 3.5× as much (8.4 % of a core at 16 voices against 3.9 %), and 8 samples (0.17 ms) is far too short to hear as steps. The last sample of a glide always lands exactly on the new setting. |
 
 ## Known limitations
 
@@ -89,13 +96,15 @@ Anything that needs real work (building tables now, loading wavetable files late
 - **A fading note keeps its last pitch.** Pitch bends during its 5 ms fade don't reach it, which is too short to hear.
 - **The envelope's stages are straight lines.** Many synths curve them (exponential decay and release), which can sound more natural. Easy to add later as an option, without breaking projects.
 - **Brightness steps when bending saw or square** across a band-limiting level boundary. Crossfading between neighbouring levels would fix it if it's audible.
+- **High resonance can get loud.** A +20 dB peak on a strong harmonic can push the output past full scale, where the output guard clips it. Real synths often compensate by lowering the level as resonance rises; worth listening for.
+- **The filter is perfectly clean.** Analog filters, and many digital ones, saturate (distort gently) when driven hard, which many people like. Ours doesn't, which also keeps it linear.
 - **Not yet checked by tools:** Steinberg's VST3 validator, and building on macOS or Linux. pluginval is run by hand, not from CTest.
 
 ## Working on it
 
 - **Tests:** `cmake --build build --config Release --target Tests`, then `ctest --test-dir build -C Release --output-on-failure`.
 - **Sound unchanged?** Record before a change and compare after; see the README.
-- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 13: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×.
+- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off.
 - **Prove a new test can fail:** break the code it protects on purpose, confirm the test fails, then restore the file and confirm it's byte-for-byte identical.
 - **pluginval** at strictness 10 on both Release and Debug builds, since Debug turns on JUCE's internal checks.
 - **Commits** are scanned for secrets by the gitleaks hook in `.githooks`.

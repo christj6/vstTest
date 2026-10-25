@@ -134,6 +134,37 @@ void testAmpEnvelopeParameters()
     check (std::abs (processor->getTailLengthSeconds() - 2.0) < 0.001, "the plug-in reports its release time as its tail length");
 }
 
+void testFilterParameters()
+{
+    auto processor = createProcessor();
+
+    // Spelled out on purpose, like 'volume' above.
+    bool allExist = true;
+
+    for (auto* id : { "filterEnabled", "filterCutoff", "filterResonance" })
+        allExist = allExist && findParameter (*processor, id) != nullptr;
+
+    check (allExist, "parameter IDs 'filterEnabled', 'filterCutoff' and 'filterResonance' exist");
+
+    if (! allExist)
+        return;
+
+    check (getParameter (*processor, "filterEnabled") == 0.0f
+               && std::abs (getParameter (*processor, "filterCutoff") - 20000.0f) < 0.5f
+               && getParameter (*processor, "filterResonance") == 0.0f,
+           "the filter defaults to off, with the cutoff fully open and no resonance");
+
+    auto* cutoff = findParameter (*processor, "filterCutoff");
+    check (cutoff->getText (cutoff->convertTo0to1 (440.0f), 20) == "440 Hz" && cutoff->getText (cutoff->convertTo0to1 (1200.0f), 20) == "1.20 kHz",
+           "the cutoff shows in Hz under 1 kHz ('440 Hz') and kHz above ('1.20 kHz')");
+    check (std::abs (cutoff->convertFrom0to1 (cutoff->getValueForText ("1.2 kHz")) - 1200.0f) < 0.5f
+               && std::abs (cutoff->convertFrom0to1 (cutoff->getValueForText ("3k")) - 3000.0f) < 0.5f
+               && std::abs (cutoff->convertFrom0to1 (cutoff->getValueForText ("440 Hz")) - 440.0f) < 0.5f,
+           "typing '1.2 kHz', '3k' or '440 Hz' sets those cutoffs");
+    check (std::abs (cutoff->convertFrom0to1 (0.5f) - 632.46f) < 1.0f && std::abs (cutoff->convertFrom0to1 (0.0f) - 20.0f) < 0.01f,
+           "the cutoff knob runs from 20 Hz, with its middle at about 632 Hz (even steps in pitch)");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
@@ -145,6 +176,9 @@ void testStateRoundTrip()
     setParameter (*original, "ampDecay", 1.25f);
     setParameter (*original, "ampSustain", 40.0f);
     setParameter (*original, "ampRelease", 3.0f);
+    setParameter (*original, "filterEnabled", 1.0f);
+    setParameter (*original, "filterCutoff", 750.0f);
+    setParameter (*original, "filterResonance", 65.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -167,6 +201,10 @@ void testStateRoundTrip()
                && std::abs (getParameter (*restored, "ampSustain") - 40.0f) < 0.01f
                && std::abs (getParameter (*restored, "ampRelease") - 3.0f) < 0.0001f,
            "the amp envelope survives saving and reloading");
+    check (getParameter (*restored, "filterEnabled") == 1.0f
+               && std::abs (getParameter (*restored, "filterCutoff") - 750.0f) < 0.5f
+               && std::abs (getParameter (*restored, "filterResonance") - 65.0f) < 0.01f,
+           "the filter settings survive saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -184,6 +222,8 @@ void testStateFromOlderVersions()
     setParameter (*original, "ampAttack", 0.03f);
     setParameter (*original, "ampSustain", 40.0f);
     setParameter (*original, "ampRelease", 3.0f);
+    setParameter (*original, "filterEnabled", 1.0f);
+    setParameter (*original, "filterCutoff", 750.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -195,7 +235,8 @@ void testStateFromOlderVersions()
         return;
     }
 
-    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease" })
+    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
+                      "filterEnabled", "filterCutoff", "filterResonance" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -217,6 +258,8 @@ void testStateFromOlderVersions()
                && std::abs (getParameter (*loaded, "ampSustain") - 100.0f) < 0.01f
                && std::abs (getParameter (*loaded, "ampRelease") - 0.005f) < 1.0e-6f,
            "an older project loads with the envelope that reproduces its old sound");
+    check (getParameter (*loaded, "filterEnabled") == 0.0f && std::abs (getParameter (*loaded, "filterCutoff") - 20000.0f) < 0.5f,
+           "an older project loads with the filter off");
 }
 
 void testOldAndInvalidState()
@@ -249,6 +292,7 @@ void runParameterTests()
     testPitchBendRangeParameter();
     testWaveformParameter();
     testAmpEnvelopeParameters();
+    testFilterParameters();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();

@@ -260,6 +260,32 @@ void testAllSoundOffFades()
            "'all sound off' releases notes over the 5 ms release instead of cutting them");
 }
 
+void testStolenNoteKeepsItsFilter()
+{
+    // The same steal, with a resonant filter on. As it starts to fade, the stolen note should still
+    // be filtered: the same as the note would have been if never stolen, not suddenly brighter.
+    const ProcessorSetUp quieterAndFiltered = [] (juce::AudioProcessor& p)
+    {
+        setParameter (p, "volume", -12.0f);
+        setParameter (p, "filterEnabled", 1.0f);
+        setParameter (p, "filterCutoff", 300.0f);
+        setParameter (p, "filterResonance", 50.0f);
+    };
+
+    auto withSteal = sixteenMiddleCs();
+    withSteal.push_back ({ stealSample, noteOn (64) });
+    auto withoutStolenNote = sixteenMiddleCs (2);
+    withoutStolenNote.push_back ({ stealSample, noteOn (64) });
+
+    const auto stolen = render ({ .numSamples = 9600, .events = withSteal, .setUp = quieterAndFiltered });
+    const auto notStolen = render ({ .numSamples = 9600, .events = withoutStolenNote, .setUp = quieterAndFiltered });
+    const auto alone = render ({ .numSamples = 9600, .events = { { 0, noteOn (60) } }, .setUp = quieterAndFiltered });
+
+    const auto stolenNote = stolen[(size_t) stealSample] - notStolen[(size_t) stealSample];
+    std::printf ("      filtered stolen note when stolen: %.5f (the note alone, filtered: %.5f)\n", stolenNote, alone[(size_t) stealSample]);
+    check (std::abs (stolenNote - alone[(size_t) stealSample]) < 1.0e-5f, "a stolen note keeps its filter as it fades");
+}
+
 } // namespace
 
 void runNoteTests()
@@ -279,6 +305,7 @@ void runNoteTests()
     testVoiceStealDoesNotClick();
     testStolenNoteFadesOut();
     testAllSoundOffFades();
+    testStolenNoteKeepsItsFilter();
 }
 
 } // namespace testing

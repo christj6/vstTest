@@ -28,6 +28,7 @@ int main (int argc, char** argv)
     testing::runParameterTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();
+    testing::runFilterTests();
 
     if (testing::failures == 0)
         std::printf ("ALL PASSED\n");

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Envelope.h"
+#include "Filter.h"
 #include "Oscillator.h"
+#include "Parameters.h"
 #include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -31,10 +33,15 @@ struct VoiceParameters
     const std::atomic<float>& ampDecay;            // seconds
     const std::atomic<float>& ampSustain;          // 0 to 100 %
     const std::atomic<float>& ampRelease;          // seconds
+
+    // The filter, read on every block.
+    const std::atomic<float>& filterEnabled;       // 0 (off) or 1 (on)
+    const std::atomic<float>& filterCutoff;        // Hz
+    const std::atomic<float>& filterResonance;     // 0 to 100 %
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
-// and shaped over time by the amp envelope.
+// low-pass filtered (when the filter is on), and shaped over time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:
@@ -57,15 +64,14 @@ private:
     struct FadingNote
     {
         Oscillator oscillator;
-        double phaseDelta; // its last pitch, bend included
-        float level;       // its level when it was cut off
-        float gain;        // the fade, from 1 down to 0
+        Filter filter;       // in the state it was in, so the note's tone doesn't change as it fades
+        bool filterRunning;
+        float filterMix;
+        double phaseDelta;   // its last pitch, bend included
+        float level;         // its level when it was cut off
+        float gain;          // the fade, from 1 down to 0
         float gainStep;
     };
-
-    std::optional<FadingNote> fadingNote;
-
-    void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
     const WaveformTables& tables;
     VoiceParameters parameters;
@@ -74,10 +80,23 @@ private:
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
     Envelope ampEnvelope;
+    std::optional<FadingNote> fadingNote;
 
     // Multiplies the note's frequency. Smoothed multiplicatively, so the glide is even in pitch.
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
 
+    // The filter only runs while it's on, or fading in or out. Switching it on or off crossfades
+    // between the unfiltered and filtered sound (filterMix 0 to 1), so it doesn't click.
+    Filter filter;
+    bool filterRunning = false;
+    int filterUpdateCountdown = 0; // samples until the filter's coefficients are next worked out
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> filterCutoff { maxCutoffHz };
+    juce::SmoothedValue<float> filterResonance; // 0 to 1
+    juce::SmoothedValue<float> filterMix;
+
+    void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void updateFilterTargets();
+    float applyFilter (float input) noexcept;
     double getBendRatio() const;
     const BandLimitedWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;

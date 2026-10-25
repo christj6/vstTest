@@ -24,6 +24,7 @@ struct Scenario
     bool sixteenNotes;
     bool movePitchWheel;
     ProcessorSetUp setUp;
+    BlockHook beforeEachBlock = {};
 };
 
 // Seconds taken to render benchmarkSeconds of audio.
@@ -60,6 +61,9 @@ double timeScenario (const Scenario& scenario)
             midi.addEvent (juce::MidiMessage::pitchWheel (1, 8192 + juce::roundToInt (8191.0 * sweep)), 0);
         }
 
+        if (scenario.beforeEachBlock)
+            scenario.beforeEachBlock (*processor, block * benchmarkBlockSize);
+
         processor->processBlock (buffer, midi);
     }
 
@@ -79,7 +83,22 @@ int runBenchmark()
         { "no notes playing", false, false, {} },
         { "16 notes, sine", true, false, {} },
         { "16 notes, saw, pitch wheel moving", true, true,
-          [] (juce::AudioProcessor& p) { setParameter (p, "waveform", 2.0f); } } };
+          [] (juce::AudioProcessor& p) { setParameter (p, "waveform", 2.0f); } },
+
+        // The filter's worst case: its cutoff changes on every block, so every voice works out its
+        // filter coefficients again on every sample.
+        { "16 notes, saw, filter cutoff moving", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 2.0f);
+              setParameter (p, "filterEnabled", 1.0f);
+              setParameter (p, "filterResonance", 50.0f);
+          },
+          [] (juce::AudioProcessor& p, int blockStart)
+          {
+              const auto sweep = 0.5 + 0.5 * std::sin (juce::MathConstants<double>::twoPi * blockStart / 96000.0);
+              setParameter (p, "filterCutoff", (float) (200.0 * std::pow (50.0, sweep)));
+          } } };
 
     const auto blockBudgetMs = 1000.0 * benchmarkBlockSize / benchmarkSampleRate;
     std::printf ("Rendering %.0f s of audio in %d-sample blocks at %.0f Hz, fastest of %d runs:\n\n",

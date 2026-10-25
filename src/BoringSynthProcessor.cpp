@@ -33,7 +33,8 @@ BoringSynthProcessor::BoringSynthProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
     const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform,
-                                            *ampAttack, *ampDecay, *ampSustain, *ampRelease };
+                                            *ampAttack, *ampDecay, *ampSustain, *ampRelease,
+                                            *filterEnabled, *filterCutoff, *filterResonance };
 
     for (int i = 0; i < numVoices; ++i)
         synth.addVoice (new SynthVoice (waveformTables, voiceParameters));

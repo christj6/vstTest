@@ -37,6 +37,21 @@ std::unique_ptr<juce::AudioParameterFloat> makeTimeParameter (const char* id, co
                                                             .withValueFromStringFunction (textToSeconds));
 }
 
+// Frequencies under 1 kHz show in hertz ("440 Hz"), higher ones in kilohertz ("1.20 kHz").
+juce::String hertzToText (float hertz, int)
+{
+    return hertz < 1000.0f ? juce::String (juce::roundToInt (hertz)) + " Hz"
+                           : juce::String (hertz / 1000.0f, 2) + " kHz";
+}
+
+// Accepts "440 Hz", "1.2 kHz", "1.2k" or a plain number of hertz.
+float textToHertz (const juce::String& text)
+{
+    const auto trimmed = text.trim();
+    const auto isKilohertz = trimmed.endsWithIgnoreCase ("khz") || trimmed.endsWithIgnoreCase ("k");
+    return isKilohertz ? trimmed.getFloatValue() * 1000.0f : trimmed.getFloatValue();
+}
+
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
@@ -100,6 +115,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
     layout.add (makeTimeParameter (ampReleaseId, "Amp Release", minReleaseSeconds, minReleaseSeconds));
+
+    // Off by default, so the plug-in sounds exactly as it did before the filter existed. When it's
+    // switched on, the cutoff starts fully open and the resonance flat, so nothing changes until
+    // they're moved.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { filterEnabledId, 1 }, "Filter", false));
+
+    juce::NormalisableRange<float> cutoffRange (minCutoffHz, maxCutoffHz);
+    cutoffRange.setSkewForCentre (cutoffKnobCentreHz);
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterCutoffId, 1 },
+                                                             "Filter Cutoff",
+                                                             cutoffRange,
+                                                             maxCutoffHz,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withStringFromValueFunction (hertzToText)
+                                                                 .withValueFromStringFunction (textToHertz)));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterResonanceId, 1 },
+                                                             "Filter Resonance",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
 
     return layout;
 }

@@ -20,6 +20,18 @@ constexpr double waveformCrossfadeSeconds = 0.01;
 // same as the shortest release, which is short enough to sound instant and long enough not to click.
 constexpr double cutOffFadeSeconds = 0.005;
 
+// How long the filter's cutoff and resonance take to follow their knobs, so moving them (or
+// automating them) doesn't make a crackling "zipper" noise. The cutoff glides evenly in pitch.
+constexpr double filterSmoothingSeconds = 0.02;
+
+// How long switching the filter on or off takes to crossfade between the two sounds.
+constexpr double filterSwitchSeconds = 0.01;
+
+// While the cutoff or resonance glides, the filter's coefficients are worked out again every this
+// many samples rather than every sample. That takes a tangent and a power, so this cuts the cost of
+// a moving filter several times over; 8 samples is under 0.2 ms, far too short to hear as steps.
+constexpr int filterUpdateInterval = 8;
+
 // A note's level for its velocity (0 to 1) and the velocity sensitivity (0 to 1). At full
 // sensitivity this is the General MIDI curve, velocity squared, where each halving of velocity is
 // about -12 dB. At zero sensitivity velocity is ignored. The hardest hit is always full level.
@@ -76,6 +88,19 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     bendPosition = pitchWheelToBend (currentPitchWheelPosition);
     frequencyRatio.reset (sampleRate, bendSmoothingSeconds);
     frequencyRatio.setCurrentAndTargetValue (getBendRatio());
+
+    // Every note starts with a clean filter, at the current settings rather than gliding to them.
+    const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
+    filter.setSampleRate (sampleRate);
+    filter.reset();
+    filterCutoff.reset (sampleRate, filterSmoothingSeconds);
+    filterCutoff.setCurrentAndTargetValue (std::clamp (parameters.filterCutoff.load(), minCutoffHz, maxCutoffHz));
+    filterResonance.reset (sampleRate, filterSmoothingSeconds);
+    filterResonance.setCurrentAndTargetValue (parameters.filterResonance.load() / 100.0f);
+    filterMix.reset (sampleRate, filterSwitchSeconds);
+    filterMix.setCurrentAndTargetValue (filterOn ? 1.0f : 0.0f);
+    filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+    filterRunning = filterOn;
 }
 
 void SynthVoice::stopNote (float, bool allowTailOff)
@@ -93,6 +118,9 @@ void SynthVoice::stopNote (float, bool allowTailOff)
     if (phaseDelta != 0.0 && ampEnvelope.isActive())
     {
         fadingNote = FadingNote { oscillator,
+                                  filter,
+                                  filterRunning,
+                                  filterMix.getCurrentValue(),
                                   phaseDelta * frequencyRatio.getCurrentValue(),
                                   noteLevel * ampEnvelope.getLevel(),
                                   1.0f,
@@ -122,13 +150,14 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // A change of waveform during the note fades in rather than switching abruptly.
     oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
 
-    // Envelope knob moves apply to the note already playing.
+    // Envelope and filter knob moves apply to the note already playing.
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
+    updateFilterTargets();
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
         const auto envelopeLevel = ampEnvelope.getNextSample();
-        const auto sample = envelopeLevel * noteLevel * oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
+        const auto sample = envelopeLevel * noteLevel * applyFilter (oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue()));
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample (ch, i, sample);
@@ -148,7 +177,12 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
-        const auto sample = note.gain * note.level * note.oscillator.getNextSample (note.phaseDelta);
+        auto input = note.oscillator.getNextSample (note.phaseDelta);
+
+        if (note.filterRunning)
+            input += note.filterMix * (note.filter.processLowPass (input) - input);
+
+        const auto sample = note.gain * note.level * input;
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample (ch, i, sample);
@@ -161,6 +195,60 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
             return;
         }
     }
+}
+
+void SynthVoice::updateFilterTargets()
+{
+    const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
+    filterCutoff.setTargetValue (std::clamp (parameters.filterCutoff.load(), minCutoffHz, maxCutoffHz));
+    filterResonance.setTargetValue (parameters.filterResonance.load() / 100.0f);
+
+    // Switched on during the note: start the filter clean, at the current settings, and fade it in.
+    if (filterOn && ! filterRunning)
+    {
+        filter.reset();
+        filterCutoff.setCurrentAndTargetValue (filterCutoff.getTargetValue());
+        filterResonance.setCurrentAndTargetValue (filterResonance.getTargetValue());
+        filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+        filterRunning = true;
+    }
+
+    // Switched off, and the fade out has finished: stop running it.
+    if (! filterOn && filterRunning && ! filterMix.isSmoothing() && filterMix.getCurrentValue() == 0.0f)
+        filterRunning = false;
+
+    // applyFilter keeps the coefficients up to date while the cutoff or resonance glides. If a
+    // change took effect without a glide, bring them up to date here instead.
+    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing())
+        filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+
+    filterMix.setTargetValue (filterOn ? 1.0f : 0.0f);
+}
+
+float SynthVoice::applyFilter (float input) noexcept
+{
+    const auto mix = filterMix.getNextValue();
+
+    if (! filterRunning)
+        return input;
+
+    // Coefficients only need working out again while the cutoff or resonance is still gliding, and
+    // then only every filterUpdateInterval samples, plus once more on the glide's last sample so it
+    // lands exactly on the new setting.
+    if (filterCutoff.isSmoothing() || filterResonance.isSmoothing())
+    {
+        const auto cutoff = filterCutoff.getNextValue();
+        const auto resonance = filterResonance.getNextValue();
+        const auto glideFinished = ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing();
+
+        if (--filterUpdateCountdown <= 0 || glideFinished)
+        {
+            filter.setCutoffAndQ (cutoff, Filter::resonanceToQ (resonance));
+            filterUpdateCountdown = filterUpdateInterval;
+        }
+    }
+
+    return input + mix * (filter.processLowPass (input) - input);
 }
 
 void SynthVoice::setCurrentPlaybackSampleRate (double newRate)
