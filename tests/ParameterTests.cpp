@@ -245,6 +245,31 @@ void testFilterVelocityParameter()
            "Filter Velocity displays in octaves ('2.50 oct', '0.00 oct')");
 }
 
+void testLfoParameters()
+{
+    auto processor = createProcessor();
+
+    // Spelled out on purpose, like 'volume' above.
+    auto* rate = findParameter (*processor, "lfoRate");
+    auto* depth = findParameter (*processor, "lfoDepth");
+    check (rate != nullptr && depth != nullptr, "parameter IDs 'lfoRate' and 'lfoDepth' exist");
+
+    if (rate == nullptr || depth == nullptr)
+        return;
+
+    check (std::abs (getParameter (*processor, "lfoRate") - 5.0f) < 1.0e-4f && getParameter (*processor, "lfoDepth") == 0.0f,
+           "the LFO defaults to 5 Hz with no depth (no effect)");
+    check (std::abs (rate->convertFrom0to1 (0.0f) - 0.05f) < 1.0e-5f && std::abs (rate->convertFrom0to1 (1.0f) - 20.0f) < 1.0e-3f
+               && std::abs (rate->convertFrom0to1 (0.5f) - 1.0f) < 0.01f,
+           "the LFO rate runs from 0.05 to 20 Hz, with 1 Hz in the middle of the knob");
+    check (rate->getText (rate->convertTo0to1 (5.0f), 20) == "5.00 Hz"
+               && rate->getText (rate->convertTo0to1 (0.25f), 20) == "0.25 Hz"
+               && std::abs (rate->getValueForText ("2.5 Hz") - rate->convertTo0to1 (2.5f)) < 1.0e-5f,
+           "the LFO rate displays in hertz ('5.00 Hz', '0.25 Hz') and accepts '2.5 Hz'");
+    check (std::abs (depth->convertFrom0to1 (1.0f) - 100.0f) < 0.01f && depth->getText (depth->convertTo0to1 (50.0f), 20) == "50",
+           "the LFO depth runs from 0 to 100 % and displays as a number ('50')");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
@@ -267,6 +292,8 @@ void testStateRoundTrip()
     setParameter (*original, "filterRelease", 1.5f);
     setParameter (*original, "filterEnvAmount", -2.5f);
     setParameter (*original, "filterVelocity", 3.25f);
+    setParameter (*original, "lfoRate", 0.7f);
+    setParameter (*original, "lfoDepth", 35.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -302,6 +329,8 @@ void testStateRoundTrip()
                && std::abs (getParameter (*restored, "filterEnvAmount") + 2.5f) < 0.001f,
            "the filter envelope survives saving and reloading");
     check (std::abs (getParameter (*restored, "filterVelocity") - 3.25f) < 0.001f, "Filter Velocity survives saving and reloading");
+    check (std::abs (getParameter (*restored, "lfoRate") - 0.7f) < 1.0e-4f && std::abs (getParameter (*restored, "lfoDepth") - 35.0f) < 0.01f,
+           "the LFO's rate and depth survive saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -325,6 +354,8 @@ void testStateFromOlderVersions()
     setParameter (*original, "filterKeyTracking", 80.0f);
     setParameter (*original, "filterEnvAmount", 3.0f);
     setParameter (*original, "filterVelocity", 5.0f);
+    setParameter (*original, "lfoRate", 0.7f);
+    setParameter (*original, "lfoDepth", 35.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -339,7 +370,7 @@ void testStateFromOlderVersions()
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
                       "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
                       "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
-                      "filterVelocity" })
+                      "filterVelocity", "lfoRate", "lfoDepth" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -367,6 +398,8 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "filterKeyTracking") == 0.0f, "an older project loads with no key tracking");
     check (getParameter (*loaded, "filterEnvAmount") == 0.0f, "an older project loads with the filter envelope having no effect");
     check (getParameter (*loaded, "filterVelocity") == 0.0f, "an older project loads with velocity not affecting the filter");
+    check (std::abs (getParameter (*loaded, "lfoRate") - 5.0f) < 1.0e-4f && getParameter (*loaded, "lfoDepth") == 0.0f,
+           "an older project loads with the LFO at 5 Hz and no depth (no effect)");
 }
 
 void testOldAndInvalidState()
@@ -402,6 +435,7 @@ void runParameterTests()
     testFilterParameters();
     testFilterEnvelopeParameters();
     testFilterVelocityParameter();
+    testLfoParameters();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();

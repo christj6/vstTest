@@ -197,6 +197,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                              juce::AudioParameterFloatAttributes()
                                                                  .withStringFromValueFunction (velocityOctavesToText)));
 
+    juce::NormalisableRange<float> lfoRateRange (minLfoRateHz, maxLfoRateHz);
+    lfoRateRange.setSkewForCentre (lfoRateKnobCentreHz);
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { lfoRateId, 1 },
+                                                             "LFO Rate",
+                                                             lfoRateRange,
+                                                             defaultLfoRateHz,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withStringFromValueFunction ([] (float hertz, int) { return juce::String (hertz, 2) + " Hz"; })
+                                                                 .withValueFromStringFunction (textToHertz)));
+
+    // Defaults to 0 %, no effect: the behaviour before the LFO existed.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { lfoDepthId, 1 },
+                                                             "LFO Depth",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+
     return layout;
 }
 

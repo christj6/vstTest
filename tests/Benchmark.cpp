@@ -110,6 +110,14 @@ int runBenchmark()
               setParameter (p, "filterResonance", 50.0f);
               setParameter (p, "filterEnvAmount", 4.0f);
               setParameter (p, "filterSustain", 30.0f);
+          } },
+
+        // Vibrato: the LFO moves every voice's pitch on every sample.
+        { "16 notes, saw, vibrato", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 2.0f);
+              setParameter (p, "lfoDepth", 20.0f);
           } } };
 
     const auto blockBudgetMs = 1000.0 * benchmarkBlockSize / benchmarkSampleRate;

@@ -4,6 +4,7 @@
 #include "Filter.h"
 #include "Oscillator.h"
 #include "Parameters.h"
+#include "Synth.h"
 #include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -51,15 +52,16 @@ struct VoiceParameters
     const std::atomic<float>& filterEnvAmount;     // octaves, -8 to 8
 };
 
-// One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
-// filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
+// One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel
+// and the LFO, filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
 // time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:
-    // waveformTables holds every waveform the voice can play. The tables and the parameter values
-    // must outlive the voice; the struct itself is copied.
-    SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters);
+    // waveformTables holds every waveform the voice can play, and modulation is the synth's LFO. The
+    // tables, the modulation and the parameter values must outlive the voice; the struct itself is
+    // copied.
+    SynthVoice (const WaveformTables& waveformTables, const Modulation& modulation, const VoiceParameters& voiceParameters);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;
     void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;
@@ -80,13 +82,14 @@ private:
         bool filterRunning;
         float filterMix;
         std::array<float, 3> filterTypeAmounts;
-        double phaseDelta;   // its last pitch, bend included
+        double phaseDelta;   // its last pitch, bend and LFO included
         float level;         // its level when it was cut off
         float gain;          // the fade, from 1 down to 0
         float gainStep;
     };
 
     const WaveformTables& tables;
+    const Modulation& modulation;
     VoiceParameters parameters;
     Oscillator oscillator;
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
@@ -99,6 +102,7 @@ private:
 
     // Multiplies the note's frequency. Smoothed multiplicatively, so the glide is even in pitch.
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
+    float lfoPitchRatio = 1.0f; // the LFO's last effect on the pitch, for a note that's cut off
 
     // The filter only runs while it's on, or fading in or out. Switching it on or off crossfades
     // between the unfiltered and filtered sound (filterMix 0 to 1), so it doesn't click.

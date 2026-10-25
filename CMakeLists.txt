@@ -18,6 +18,7 @@ set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Synth.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Synth.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SynthVoice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SynthVoice.h

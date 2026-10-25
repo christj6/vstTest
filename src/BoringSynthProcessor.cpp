@@ -38,7 +38,7 @@ BoringSynthProcessor::BoringSynthProcessor()
                                             *filterAttack, *filterDecay, *filterSustain, *filterRelease, *filterEnvAmount };
 
     for (int i = 0; i < numVoices; ++i)
-        synth.addVoice (new SynthVoice (waveformTables, voiceParameters));
+        synth.addVoice (new SynthVoice (waveformTables, synth.getModulation(), voiceParameters));
 
     synth.addSound (new SynthSound());
 

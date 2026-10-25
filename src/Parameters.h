@@ -35,6 +35,11 @@ constexpr const char* filterEnvAmountId = "filterEnvAmount";
 // How much softer notes close the filter.
 constexpr const char* filterVelocityId = "filterVelocity";
 
+// The LFO, which every note shares. Its depth is a percentage, not a pitch, because later it can
+// move other things too.
+constexpr const char* lfoRateId = "lfoRate";
+constexpr const char* lfoDepthId = "lfoDepth";
+
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.
 inline const juce::StringArray filterTypeNames { "Low-pass", "High-pass", "Band-pass" };
@@ -77,6 +82,16 @@ constexpr float maxFilterEnvOctaves = 8.0f;
 // How far velocity can lower the cutoff of the softest notes, in octaves. The same reach as the
 // filter envelope.
 constexpr float maxFilterVelocityOctaves = 8.0f;
+
+// LFO rate in Hz, from a slow sweep to a fast wobble. The knob is skewed so equal turns are equal
+// steps in speed: its middle is the geometric mean of the range, 1 Hz. 5 Hz is a typical vibrato.
+constexpr float minLfoRateHz = 0.05f;
+constexpr float maxLfoRateHz = 20.0f;
+constexpr float lfoRateKnobCentreHz = 1.0f;
+constexpr float defaultLfoRateHz = 5.0f;
+
+// How far the LFO at full depth moves the pitch, in semitones either way.
+constexpr float maxLfoPitchSemitones = 12.0f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

@@ -7,15 +7,16 @@ The step-by-step plan is in [ROADMAP.md](ROADMAP.md).
 ## How a note becomes sound
 
 1. The DAW calls `BoringSynthProcessor::processBlock` with an empty buffer and the MIDI for that block.
-2. JUCE's `Synthesiser` (our subclass `Synth`) splits the block at each MIDI event and assigns notes to voices. It handles note on/off, voice stealing, the pitch wheel and the sustain pedal.
-3. Each playing `SynthVoice` asks its `Oscillator` for one sample at a time. The oscillator reads the current waveform's `BandLimitedWaveTable`, choosing the level whose harmonics all stay below Nyquist for the note's current pitch.
+2. JUCE's `Synthesiser` (our subclass `Synth`) splits the block at each MIDI event and assigns notes to voices. It handles note on/off, voice stealing, the pitch wheel and the sustain pedal. Before running the voices, `Synth` works out the LFO's effect for up to 512 samples at a time, into its `Modulation`, which every voice reads.
+3. Each playing `SynthVoice` asks its `Oscillator` for one sample at a time, at the note's pitch moved by the pitch wheel and the LFO. The oscillator reads the current waveform's `BandLimitedWaveTable`, choosing the level whose harmonics all stay below Nyquist for the note's current pitch.
 4. If the filter is on, the voice runs each sample through its own `Filter` (each voice has one, so steps 16–18 can give each note its own cutoff). Then it scales the sample by the note's level (velocity) and its amp `Envelope`, and adds it to the buffer. The voice ends once the envelope's release has finished. If the voice was just stolen for a new note, it also plays the old note underneath, fading it out over 5 ms (its "fading note"). The output is mono, written to every channel.
 5. The processor applies the smoothed Volume, then `protectOutput`: NaN or infinity becomes silence, and anything past full scale is clipped to it. This is always the very last step.
 
 ### Who owns what
 
-- The **processor** owns the parameters (`AudioProcessorValueTreeState`), the `WaveformTables` and the `Synth`. The tables are declared **before** the synth, so they outlive the voices that read them.
-- **Voices** hold references to the shared tables and a `VoiceParameters` struct of references to the parameters' live values. A new parameter that voices need goes in `VoiceParameters`.
+- The **processor** owns the parameters (`AudioProcessorValueTreeState`), the `WaveformTables` and the `Synth`. The tables and the parameters are declared **before** the synth, so they outlive the voices (and the LFO) that read them.
+- The **synth** owns the LFO and its `Modulation`, which the voices read.
+- **Voices** hold references to the shared tables, the synth's `Modulation` and a `VoiceParameters` struct of references to the parameters' live values. A new parameter that voices need goes in `VoiceParameters`.
 - **Tables are built once**, in the processor's constructor, never on the audio thread.
 
 ## Permanent identifiers
@@ -26,7 +27,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking`, `filterAttack`, `filterDecay`, `filterSustain`, `filterRelease`, `filterEnvAmount`, `filterVelocity` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking`, `filterAttack`, `filterDecay`, `filterSustain`, `filterRelease`, `filterEnvAmount`, `filterVelocity`, `lfoRate`, `lfoDepth` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Filter type choices, in order | `Low-pass`, `High-pass`, `Band-pass`. Saved by position, so new types may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
@@ -98,11 +99,19 @@ Anything that needs real work (building tables now, loading wavetable files late
 | The filter envelope's shape defaults to a pluck: no attack, 300 ms decay to 0 % sustain, 300 ms release | It has no effect until the amount is turned up, so the defaults are chosen to sound good the moment it is. |
 | The per-block coefficient refresh only runs when nothing moves the cutoff | Refreshing at block starts while the envelope moved made the output depend on the host's block size (caught by the block-size test). While anything moves the cutoff, the every-8-samples updates handle it, at the same moments whatever the block size. Each note also restarts that 8-sample count, so a note never depends on what its voice played before. |
 | Velocity → filter lowers softer notes' cutoff by `amount × (1 − velocity)` octaves (0 to 8, default 0) | The same idea as Velocity Sensitivity: the hardest hit always gets exactly what the knobs set, and turning it up only changes softer notes. Octaves keep it meaning the same wherever the cutoff is, as for the envelope amount. It's a straight line in octaves, so velocity 64 gets about half the amount. It's applied with key tracking, to the cutoff's target, so moving the knob mid-note still glides; at 0 it multiplies by exactly 1. It moves the cutoff itself rather than scaling the filter envelope's amount (another common choice), so it works with the envelope off. |
+| One LFO shared by every note, running freely (not restarted by notes) | Like a hardware synth's single LFO: notes played together wobble together, in step. Restarting it on each note is optional step 23. It starts from the beginning of its cycle (rising from 0) when the host prepares the plug-in. |
+| The LFO is worked out once per sample in `Synth`, for every voice, into a fixed 512-sample `Modulation` buffer | Working it out per voice would repeat the same sums 16 times. `Synth` overrides `renderVoices`, which JUCE calls between MIDI events, and splits longer stretches into pieces of up to 512 samples, so nothing allocates whatever the block size. It can't split the block before JUCE's MIDI handling instead, because `Synthesiser` handles every MIDI event past the end of a range it's given straight away, which would move later notes early. The LFO moves on one sample at a time in order, so the output doesn't depend on the block size (checked with blocks of 1, 7, 512 and 2048). |
+| The LFO reads the sine's wave table with our own `Oscillator` | The same code as a note, so step 21 can offer the other waveforms (and crossfade between them) without new code. |
+| LFO Depth is a percentage (0–100 %, default 0), not semitones | Step 20 sends the same depth to volume or the cutoff, and a saved value can't be reinterpreted later without converting old projects. For pitch, 100 % is ±1 octave. |
+| Pitch depth is 12 × depth² semitones | Squared, so the knob's travel goes to the small depths vibrato uses: 20 % is about ±½ semitone. At 0 % it's exactly 0, so the pitch is multiplied by exactly 1. |
+| LFO Rate 0.05–20 Hz, knob centre 1 Hz, default 5 Hz | Slow sweeps to fast wobbles, skewed so equal turns are equal steps in speed. 5 Hz is a typical vibrato, ready for when the depth is turned up. Rate changes need no glide: the LFO's phase carries on smoothly at the new speed. |
+| LFO Depth glides over 20 ms | So turning it up during a note doesn't jump the pitch. |
 
 ## Known limitations
 
 - **A voice stolen twice within 5 ms** still cuts its first old note: each voice keeps only one fading note, so the newer one replaces it. That needs three notes on one voice in 5 ms with every voice busy.
-- **A fading note keeps its last pitch.** Pitch bends during its 5 ms fade don't reach it, which is too short to hear.
+- **A fading note keeps its last pitch**, bend and vibrato included. Pitch bends and the LFO's movement during its 5 ms fade don't reach it, which is too short to hear.
+- **The LFO's position depends on when the host prepared the plug-in**, not on the song's position. The same note can catch the vibrato at a different point each time the song plays. Retriggering on each note, or syncing to the host's tempo (step 23), would make it repeatable.
 - **The envelope's stages are straight lines.** Many synths curve them (exponential decay and release), which can sound more natural. Easy to add later as an option, without breaking projects.
 - **Brightness steps when bending saw or square** across a band-limiting level boundary. Crossfading between neighbouring levels would fix it if it's audible.
 - **High resonance can get loud.** A +20 dB peak on a strong harmonic can push the output past full scale, where the output guard clips it. Real synths often compensate by lowering the level as resonance rises; worth listening for.
@@ -115,7 +124,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 
 - **Tests:** `cmake --build build --config Release --target Tests`, then `ctest --test-dir build -C Release --output-on-failure`.
 - **Sound unchanged?** Record before a change and compare after; see the README.
-- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off. Step 17 added a filter envelope case, measured in a slower session at about the same cost as the moving cutoff (5.1 % against 4.8 %). **The numbers drift with how busy the computer is** (by 15–25 % between sessions), so to judge a change, benchmark the previous commit at the same time: `git stash`, rebuild, benchmark, `git stash pop`, rebuild, benchmark. Step 15 measured this way cost nothing measurable.
+- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off. Step 17 added a filter envelope case, measured in a slower session at about the same cost as the moving cutoff (5.1 % against 4.8 %). **The numbers drift with how busy the computer is** (by 15–25 % between sessions), so to judge a change, benchmark the previous commit at the same time: `git stash`, rebuild, benchmark, `git stash pop`, rebuild, benchmark. Step 15 measured this way cost nothing measurable. Step 19's LFO, measured this way, costs about 0.012 ms per block whether or not notes play (0.1 % of a core), and vibrato itself costs no more than plain notes; 16 sine notes went from 2.75 % to about 2.9 %.
 - **Prove a new test can fail:** break the code it protects on purpose, confirm the test fails, then restore the file and confirm it's byte-for-byte identical.
 - **pluginval** at strictness 10 on both Release and Debug builds, since Debug turns on JUCE's internal checks.
 - **Commits** are scanned for secrets by the gitleaks hook in `.githooks`.

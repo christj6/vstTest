@@ -14,13 +14,13 @@ The plan for growing BoringSynth, one small step at a time, from a plain sine sy
 | 3. Oscillator | 8. Split into files, `Oscillator` class · 9. Sine read from a wave table · 10. Band-limited table levels (FFT) · 11. Waveform choice: sine, triangle, saw, square |
 | 4. Amp envelope | 12. ADSR amp envelope, our own `Envelope` class, with defaults that reproduce the old 5 ms fade · 13. Stolen voices fade their old note out over 5 ms instead of clicking |
 | 5. Filter | 14. Per-voice resonant low-pass filter (our own `Filter` class): an on/off switch (off by default), Cutoff and Resonance · 15. Filter type: low-pass, high-pass, band-pass, crossfading when changed · 16. Key tracking, 0–100 % around middle C · 17. A filter envelope per note, its amount in octaves · 18. Velocity → filter: softer notes darker, by up to 8 octaves |
+| 6. LFO (in progress) | 19. One shared, free-running LFO on pitch (vibrato): Rate and Depth, worked out once per sample for every voice |
 
 Along the way, the test tools also gained a reference render (`--record` / `--compare`), named render options, shared measuring helpers, and a CPU benchmark (`--benchmark`).
 
 ## Next
 
 **Phase 6: LFO**
-- 19. One LFO on pitch (vibrato): Rate and Depth. Depth 0 sounds identical to before.
 - 20. LFO destination: pitch, volume or filter cutoff.
 - 21. LFO shape, reusing the wave tables.
 - 22. Mod wheel → LFO depth.

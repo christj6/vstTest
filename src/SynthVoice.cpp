@@ -71,8 +71,9 @@ float envelopedCutoff (float cutoffHz, float amountOctaves, float envelopeLevel)
 
 } // namespace
 
-SynthVoice::SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters)
+SynthVoice::SynthVoice (const WaveformTables& waveformTables, const Modulation& synthModulation, const VoiceParameters& voiceParameters)
     : tables (waveformTables),
+      modulation (synthModulation),
       parameters (voiceParameters),
       oscillator (waveformTables.get (0))
 {
@@ -164,7 +165,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                                   { filterTypeAmounts[0].getCurrentValue(),
                                     filterTypeAmounts[1].getCurrentValue(),
                                     filterTypeAmounts[2].getCurrentValue() },
-                                  phaseDelta * frequencyRatio.getCurrentValue(),
+                                  phaseDelta * frequencyRatio.getCurrentValue() * lfoPitchRatio,
                                   noteLevel * ampEnvelope.getLevel(),
                                   1.0f,
                                   (float) (1.0 / (cutOffFadeSeconds * getSampleRate())) };
@@ -202,7 +203,8 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     {
         const auto envelopeLevel = ampEnvelope.getNextSample();
         const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
-        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
+        lfoPitchRatio = modulation.getPitchRatio (i);
+        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio);
         const auto sample = envelopeLevel * noteLevel * applyFilter (oscillatorSample, filterEnvelopeLevel);
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)

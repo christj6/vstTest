@@ -246,6 +246,41 @@ void testStolenNoteFadesOut()
     check (afterFade < 1.0e-6f, "and it's silent 5 ms after it was stolen");
 }
 
+void testStolenNoteKeepsLfoPitch()
+{
+    // The LFO, at full depth, is at the top of its cycle (an octave up) when the note is stolen. As it
+    // fades, the stolen note should stay at that pitch, matching the unstolen note faded the same
+    // way, rather than dropping back an octave.
+    const auto withLfo = [] (juce::AudioProcessor& p)
+    {
+        quieter (p);
+        setParameter (p, "lfoRate", (float) (0.25 * testSampleRate / stealSample));
+        setParameter (p, "lfoDepth", 100.0f);
+    };
+    auto events = sixteenMiddleCs();
+    events.push_back ({ stealSample, noteOn (64) });
+    const auto withSteal = render ({ .numSamples = 9600, .events = events, .setUp = withLfo });
+    auto eventsWithoutStolenNote = sixteenMiddleCs (2);
+    eventsWithoutStolenNote.push_back ({ stealSample, noteOn (64) });
+    const auto withoutStolenNote = render ({ .numSamples = 9600, .events = eventsWithoutStolenNote, .setUp = withLfo });
+    const auto unstolen = render ({ .numSamples = 9600, .events = { { 0, noteOn (60) } }, .setUp = withLfo });
+
+    const auto peak = 0.1f * juce::Decibels::decibelsToGain (-12.0f);
+    float largestDifference = 0.0f;
+
+    for (int i = 0; i < 120; ++i)
+    {
+        const auto index = (size_t) (stealSample + i);
+        const auto stolenNote = withSteal[index] - withoutStolenNote[index];
+        const auto fade = 1.0f - (float) i / 240.0f;
+        largestDifference = std::max (largestDifference, std::abs (stolenNote - fade * unstolen[index]));
+    }
+
+    std::printf ("      first half of the fade: the stolen note differs from the unstolen one by at most %.4f (its peak is %.4f)\n",
+                 largestDifference, peak);
+    check (largestDifference < 0.1f * peak, "a stolen note keeps the LFO's pitch as it fades");
+}
+
 void testAllSoundOffFades()
 {
     // MIDI "all sound off" (controller 120) is meant to silence everything at once. JUCE's synth
@@ -306,6 +341,7 @@ void runNoteTests()
     testBlockSizeIndependence();
     testVoiceStealDoesNotClick();
     testStolenNoteFadesOut();
+    testStolenNoteKeepsLfoPitch();
     testAllSoundOffFades();
     testStolenNoteKeepsItsFilter();
 }

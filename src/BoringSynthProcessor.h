@@ -8,11 +8,11 @@
 
 // A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
-// envelope. No editor yet. The pitch wheel bends notes and the sustain pedal holds them. The
-// parameters are the output volume, velocity sensitivity, pitch bend range, waveform, the amp
-// envelope's attack, decay, sustain and release, and the filter's on/off switch, type, cutoff,
-// resonance, key tracking, velocity amount, and its own envelope's attack, decay, sustain, release
-// and amount.
+// envelope. An LFO adds vibrato. No editor yet. The pitch wheel bends notes and the sustain pedal
+// holds them. The parameters are the output volume, velocity sensitivity, pitch bend range,
+// waveform, the amp envelope's attack, decay, sustain and release, the filter's on/off switch,
+// type, cutoff, resonance, key tracking, velocity amount, and its own envelope's attack, decay,
+// sustain, release and amount, and the LFO's rate and depth.
 
 namespace boringsynth
 {
@@ -47,10 +47,8 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
 private:
-    // Declared before the synth, so it outlives the voices that read it.
+    // Declared before the synth, so they outlive the voices that read them.
     WaveformTables waveformTables;
-
-    Synth synth;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
@@ -71,6 +69,11 @@ private:
     std::atomic<float>* filterSustain = parameters.getRawParameterValue (filterSustainId);
     std::atomic<float>* filterRelease = parameters.getRawParameterValue (filterReleaseId);
     std::atomic<float>* filterEnvAmount = parameters.getRawParameterValue (filterEnvAmountId);
+    std::atomic<float>* lfoRate = parameters.getRawParameterValue (lfoRateId);
+    std::atomic<float>* lfoDepth = parameters.getRawParameterValue (lfoDepthId);
+
+    // The LFO reads the sine's table.
+    Synth synth { waveformTables.get (0), { *lfoRate, *lfoDepth } };
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.
