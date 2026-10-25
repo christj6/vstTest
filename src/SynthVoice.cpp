@@ -49,6 +49,14 @@ float pitchWheelToBend (int wheelValue)
     return offset >= 0.0f ? offset / 8191.0f : offset / 8192.0f;
 }
 
+// The filter's output for the chosen type, given how much of each type is heard (indexed by
+// position in filterTypeNames). Exactly the chosen type's output when its amount is 1 and the
+// others are 0; a blend while crossfading between types.
+float blendFilterTypes (const Filter::Outputs& outputs, float lowPass, float highPass, float bandPass) noexcept
+{
+    return lowPass * outputs.lowPass + highPass * outputs.highPass + bandPass * outputs.bandPass;
+}
+
 } // namespace
 
 SynthVoice::SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters)
@@ -101,6 +109,14 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     filterMix.setCurrentAndTargetValue (filterOn ? 1.0f : 0.0f);
     filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
     filterRunning = filterOn;
+
+    const auto type = getCurrentFilterType();
+
+    for (int i = 0; i < (int) filterTypeAmounts.size(); ++i)
+    {
+        filterTypeAmounts[(size_t) i].reset (sampleRate, filterSwitchSeconds);
+        filterTypeAmounts[(size_t) i].setCurrentAndTargetValue (i == type ? 1.0f : 0.0f);
+    }
 }
 
 void SynthVoice::stopNote (float, bool allowTailOff)
@@ -121,6 +137,9 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                                   filter,
                                   filterRunning,
                                   filterMix.getCurrentValue(),
+                                  { filterTypeAmounts[0].getCurrentValue(),
+                                    filterTypeAmounts[1].getCurrentValue(),
+                                    filterTypeAmounts[2].getCurrentValue() },
                                   phaseDelta * frequencyRatio.getCurrentValue(),
                                   noteLevel * ampEnvelope.getLevel(),
                                   1.0f,
@@ -180,7 +199,14 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
         auto input = note.oscillator.getNextSample (note.phaseDelta);
 
         if (note.filterRunning)
-            input += note.filterMix * (note.filter.processLowPass (input) - input);
+        {
+            const auto& amounts = note.filterTypeAmounts;
+            const auto filtered = blendFilterTypes (note.filter.processAll (input),
+                                                    amounts[(size_t) lowPassType],
+                                                    amounts[(size_t) highPassType],
+                                                    amounts[(size_t) bandPassType]);
+            input += note.filterMix * (filtered - input);
+        }
 
         const auto sample = note.gain * note.level * input;
 
@@ -203,12 +229,22 @@ void SynthVoice::updateFilterTargets()
     filterCutoff.setTargetValue (std::clamp (parameters.filterCutoff.load(), minCutoffHz, maxCutoffHz));
     filterResonance.setTargetValue (parameters.filterResonance.load() / 100.0f);
 
+    // A change of filter type crossfades from the old type's output to the new one's.
+    const auto type = getCurrentFilterType();
+
+    for (int i = 0; i < (int) filterTypeAmounts.size(); ++i)
+        filterTypeAmounts[(size_t) i].setTargetValue (i == type ? 1.0f : 0.0f);
+
     // Switched on during the note: start the filter clean, at the current settings, and fade it in.
     if (filterOn && ! filterRunning)
     {
         filter.reset();
         filterCutoff.setCurrentAndTargetValue (filterCutoff.getTargetValue());
         filterResonance.setCurrentAndTargetValue (filterResonance.getTargetValue());
+
+        for (auto& amount : filterTypeAmounts)
+            amount.setCurrentAndTargetValue (amount.getTargetValue());
+
         filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
         filterRunning = true;
     }
@@ -248,7 +284,17 @@ float SynthVoice::applyFilter (float input) noexcept
         }
     }
 
-    return input + mix * (filter.processLowPass (input) - input);
+    const auto filtered = blendFilterTypes (filter.processAll (input),
+                                            filterTypeAmounts[(size_t) lowPassType].getNextValue(),
+                                            filterTypeAmounts[(size_t) highPassType].getNextValue(),
+                                            filterTypeAmounts[(size_t) bandPassType].getNextValue());
+
+    return input + mix * (filtered - input);
+}
+
+int SynthVoice::getCurrentFilterType() const
+{
+    return juce::jlimit (0, filterTypeNames.size() - 1, juce::roundToInt (parameters.filterType.load()));
 }
 
 void SynthVoice::setCurrentPlaybackSampleRate (double newRate)

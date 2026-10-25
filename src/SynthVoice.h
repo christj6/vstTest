@@ -8,6 +8,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <optional>
 
 namespace boringsynth
@@ -38,10 +39,11 @@ struct VoiceParameters
     const std::atomic<float>& filterEnabled;       // 0 (off) or 1 (on)
     const std::atomic<float>& filterCutoff;        // Hz
     const std::atomic<float>& filterResonance;     // 0 to 100 %
+    const std::atomic<float>& filterType;          // position in filterTypeNames
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
-// low-pass filtered (when the filter is on), and shaped over time by the amp envelope.
+// filtered (when the filter is on), and shaped over time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:
@@ -67,6 +69,7 @@ private:
         Filter filter;       // in the state it was in, so the note's tone doesn't change as it fades
         bool filterRunning;
         float filterMix;
+        std::array<float, 3> filterTypeAmounts;
         double phaseDelta;   // its last pitch, bend included
         float level;         // its level when it was cut off
         float gain;          // the fade, from 1 down to 0
@@ -94,9 +97,14 @@ private:
     juce::SmoothedValue<float> filterResonance; // 0 to 1
     juce::SmoothedValue<float> filterMix;
 
+    // How much of each filter type (indexed by position in filterTypeNames) is heard: 1 for the
+    // chosen type and 0 for the others, except while crossfading after the type changes.
+    std::array<juce::SmoothedValue<float>, 3> filterTypeAmounts;
+
     void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void updateFilterTargets();
     float applyFilter (float input) noexcept;
+    int getCurrentFilterType() const;
     double getBendRatio() const;
     const BandLimitedWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;

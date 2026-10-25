@@ -140,6 +140,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
 
+    // Low-pass, the only type before this existed. The choices are saved by position, so
+    // filterTypeNames' order is permanent.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { filterTypeId, 1 },
+                                                              "Filter Type",
+                                                              filterTypeNames,
+                                                              lowPassType));
+
     return layout;
 }
 

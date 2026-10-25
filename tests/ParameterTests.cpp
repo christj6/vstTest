@@ -163,6 +163,23 @@ void testFilterParameters()
            "typing '1.2 kHz', '3k' or '440 Hz' sets those cutoffs");
     check (std::abs (cutoff->convertFrom0to1 (0.5f) - 632.46f) < 1.0f && std::abs (cutoff->convertFrom0to1 (0.0f) - 20.0f) < 0.01f,
            "the cutoff knob runs from 20 Hz, with its middle at about 632 Hz (even steps in pitch)");
+
+    // The filter type, spelled out on purpose like the IDs above. A DAW saves the choice by
+    // position, so the list must keep this order forever; new types can only go at the end.
+    auto* type = findParameter (*processor, "filterType");
+    check (type != nullptr, "parameter ID 'filterType' exists");
+
+    if (type == nullptr)
+        return;
+
+    const juce::StringArray expected { "Low-pass", "High-pass", "Band-pass" };
+    bool inOrder = true;
+
+    for (int i = 0; i < expected.size(); ++i)
+        inOrder = inOrder && type->getText (type->convertTo0to1 ((float) i), 20) == expected[i];
+
+    check (getParameter (*processor, "filterType") == 0.0f, "the filter type defaults to the first choice (low-pass)");
+    check (inOrder, "the filter types are Low-pass, High-pass and Band-pass, in that order");
 }
 
 void testStateRoundTrip()
@@ -179,6 +196,7 @@ void testStateRoundTrip()
     setParameter (*original, "filterEnabled", 1.0f);
     setParameter (*original, "filterCutoff", 750.0f);
     setParameter (*original, "filterResonance", 65.0f);
+    setParameter (*original, "filterType", 1.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -203,8 +221,9 @@ void testStateRoundTrip()
            "the amp envelope survives saving and reloading");
     check (getParameter (*restored, "filterEnabled") == 1.0f
                && std::abs (getParameter (*restored, "filterCutoff") - 750.0f) < 0.5f
-               && std::abs (getParameter (*restored, "filterResonance") - 65.0f) < 0.01f,
-           "the filter settings survive saving and reloading");
+               && std::abs (getParameter (*restored, "filterResonance") - 65.0f) < 0.01f
+               && getParameter (*restored, "filterType") == 1.0f,
+           "the filter settings (including its type, high-pass) survive saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -224,6 +243,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "ampRelease", 3.0f);
     setParameter (*original, "filterEnabled", 1.0f);
     setParameter (*original, "filterCutoff", 750.0f);
+    setParameter (*original, "filterType", 2.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -236,7 +256,7 @@ void testStateFromOlderVersions()
     }
 
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
-                      "filterEnabled", "filterCutoff", "filterResonance" })
+                      "filterEnabled", "filterCutoff", "filterResonance", "filterType" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -260,6 +280,7 @@ void testStateFromOlderVersions()
            "an older project loads with the envelope that reproduces its old sound");
     check (getParameter (*loaded, "filterEnabled") == 0.0f && std::abs (getParameter (*loaded, "filterCutoff") - 20000.0f) < 0.5f,
            "an older project loads with the filter off");
+    check (getParameter (*loaded, "filterType") == 0.0f, "an older project loads with the low-pass filter type, its only type back then");
 }
 
 void testOldAndInvalidState()

@@ -262,14 +262,16 @@ void testAllSoundOffFades()
 
 void testStolenNoteKeepsItsFilter()
 {
-    // The same steal, with a resonant filter on. As it starts to fade, the stolen note should still
-    // be filtered: the same as the note would have been if never stolen, not suddenly brighter.
+    // The same steal, with a resonant band-pass filter on. As it starts to fade, the stolen note
+    // should still be filtered the same way: as the note would have been if never stolen, not
+    // suddenly brighter or switched to another filter type.
     const ProcessorSetUp quieterAndFiltered = [] (juce::AudioProcessor& p)
     {
         setParameter (p, "volume", -12.0f);
         setParameter (p, "filterEnabled", 1.0f);
         setParameter (p, "filterCutoff", 300.0f);
         setParameter (p, "filterResonance", 50.0f);
+        setParameter (p, "filterType", 2.0f);
     };
 
     auto withSteal = sixteenMiddleCs();

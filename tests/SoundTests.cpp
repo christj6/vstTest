@@ -1,5 +1,7 @@
 #include "TestHelpers.h"
 
+#include <array>
+
 // Sound tests: the waveforms, the amp envelope and the filter, rendered through the whole plug-in.
 
 namespace testing
@@ -186,13 +188,13 @@ void testFilterOffByDefault()
     check (byDefault == explicitlyOff, "the filter is off by default");
 }
 
-void testFilterCutsHighHarmonics()
+// How much the filter (set up by filterSetUp) changes harmonics 2, 9 and 36 of a 110 Hz saw (220 Hz,
+// 990 Hz and 3960 Hz), in dB, compared with the same note unfiltered.
+std::array<double, 3> harmonicChanges (const ProcessorSetUp& filterSetUp)
 {
-    // A 110 Hz saw through a 1 kHz cutoff, harmonic by harmonic, compared with the same note unfiltered:
-    // the 2nd harmonic (220 Hz) untouched, the 9th (990 Hz) 3 dB down, the 36th (3960 Hz) about 24 dB down.
     const std::vector<TimedMessage> lowNote { { 0, noteOn (45) } };
     const auto unfiltered = render ({ .events = lowNote, .setUp = withWaveform (saw) });
-    const auto filtered = render ({ .events = lowNote, .setUp = withFilter (1000.0f, 0.0f, saw) });
+    const auto filtered = render ({ .events = lowNote, .setUp = filterSetUp });
 
     constexpr int length = 32768;
     const auto before = windowedSpectrum (unfiltered, 9600, length);
@@ -203,10 +205,75 @@ void testFilterCutsHighHarmonics()
         return toDecibels (after[bin] / before[bin]);
     };
 
+    return { changeAt (2), changeAt (9), changeAt (36) };
+}
+
+ProcessorSetUp withFilterType (int type, float cutoffHz)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        withFilter (cutoffHz, 0.0f, saw) (p);
+        setParameter (p, "filterType", (float) type);
+    };
+}
+
+constexpr int lowPass = 0, highPass = 1, bandPass = 2;
+
+void testFilterCutsHighHarmonics()
+{
+    // Through a 1 kHz low-pass: the 2nd harmonic untouched, the 9th 3 dB down, the 36th about 24 dB down.
+    const auto changes = harmonicChanges (withFilter (1000.0f, 0.0f, saw));
     std::printf ("      110 Hz saw, 1 kHz cutoff: harmonic 2 %+.2f dB, 9 %+.2f dB, 36 %+.2f dB (expected about 0, -3, -24)\n",
-                 changeAt (2), changeAt (9), changeAt (36));
-    check (std::abs (changeAt (2)) < 0.1 && std::abs (changeAt (9) + 3.0) < 0.5 && std::abs (changeAt (36) + 24.0) < 1.0,
+                 changes[0], changes[1], changes[2]);
+    check (std::abs (changes[0]) < 0.1 && std::abs (changes[1] + 3.0) < 0.5 && std::abs (changes[2] + 24.0) < 1.0,
            "the filter keeps harmonics below its cutoff and removes those above it");
+}
+
+void testDefaultFilterTypeIsLowPass()
+{
+    const std::vector<TimedMessage> lowNote { { 0, noteOn (45) } };
+    const auto byDefault = render ({ .events = lowNote, .setUp = withFilter (1000.0f, 0.0f, saw) });
+    const auto lowPassChosen = render ({ .events = lowNote, .setUp = withFilterType (lowPass, 1000.0f) });
+    check (byDefault == lowPassChosen, "the filter type defaults to low-pass");
+}
+
+void testHighPassRemovesLowHarmonics()
+{
+    // Through a 1 kHz high-pass: the 2nd harmonic about 26 dB down, the 9th 3 dB down, the 36th untouched.
+    const auto changes = harmonicChanges (withFilterType (highPass, 1000.0f));
+    std::printf ("      110 Hz saw, 1 kHz high-pass: harmonic 2 %+.2f dB, 9 %+.2f dB, 36 %+.2f dB (expected about -26.3, -3, 0)\n",
+                 changes[0], changes[1], changes[2]);
+    check (std::abs (changes[0] + 26.3) < 1.0 && std::abs (changes[1] + 3.0) < 0.5 && std::abs (changes[2]) < 0.1,
+           "the high-pass filter removes harmonics below its cutoff and keeps those above it");
+}
+
+void testBandPassKeepsTheMiddle()
+{
+    // Through a 1 kHz band-pass: the 9th harmonic (near the cutoff) 3 dB down, and the 2nd and 36th,
+    // a couple of octaves away on either side, about 12-13 dB down.
+    const auto changes = harmonicChanges (withFilterType (bandPass, 1000.0f));
+    std::printf ("      110 Hz saw, 1 kHz band-pass: harmonic 2 %+.2f dB, 9 %+.2f dB, 36 %+.2f dB (expected about -13.2, -3, -12)\n",
+                 changes[0], changes[1], changes[2]);
+    check (std::abs (changes[0] + 13.2) < 1.0 && std::abs (changes[1] + 3.0) < 0.5 && std::abs (changes[2] + 12.0) < 1.5,
+           "the band-pass filter keeps harmonics near its cutoff and reduces those either side");
+}
+
+void testFilterTypeChangeCrossfades()
+{
+    // A sine at the cutoff (1046.5 Hz, the C two octaves up), switched from low-pass to high-pass
+    // mid-note. At the cutoff the two are half a cycle apart, so an instant switch would jump.
+    const std::vector<TimedMessage> note { { 0, noteOn (84) } };
+    const auto output = render ({ .events = note,
+                                  .setUp = withFilter (1046.5f, 0.0f),
+                                  .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                  {
+                                      if (blockStart == changeSample)
+                                          setParameter (p, "filterType", (float) highPass);
+                                  } });
+    const auto steady = largestStep (std::vector<float> (output.begin() + 4800, output.begin() + changeSample));
+    const auto atChange = largestStep (std::vector<float> (output.begin() + changeSample - 10, output.begin() + changeSample + 600));
+    std::printf ("      largest step: %.4f before switching low-pass to high-pass, %.4f around the switch\n", steady, atChange);
+    check (atChange <= steady * 1.1f, "changing the filter type during a note crossfades instead of jumping");
 }
 
 void testOpenFilterBarelyChanges()
@@ -336,6 +403,10 @@ void runSoundTests()
     testEachNoteStartsWithCleanFilter();
     testFilterBlockSizeIndependence();
     testHighResonanceSweepStaysFinite();
+    testDefaultFilterTypeIsLowPass();
+    testHighPassRemovesLowHarmonics();
+    testBandPassKeepsTheMiddle();
+    testFilterTypeChangeCrossfades();
 }
 
 } // namespace testing

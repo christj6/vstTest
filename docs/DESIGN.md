@@ -26,8 +26,9 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
+| Filter type choices, in order | `Low-pass`, `High-pass`, `Band-pass`. Saved by position, so new types may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
 
 **Changing the saved state:**
@@ -85,6 +86,8 @@ Anything that needs real work (building tables now, loading wavetable files late
 | A filter on every voice, not one on the output | With identical settings, one filter on the mix would sound the same, since the filter is linear. But key tracking, the filter envelope and velocity → filter (steps 16–18) give each note its own cutoff, and each note should start with a clean filter rather than one still ringing from earlier notes. One filter shared by all voices is called "paraphonic": a distinct sound, but usually a hardware compromise. |
 | The filter has an on/off switch, off by default | A low-pass filter even fully open shifts the phase of high frequencies, so "always on, cutoff at 20 kHz" wouldn't reproduce the old sound exactly. Older projects load with it off, bit-for-bit unchanged. Serum and Vital also start with their filters off. Switching it during a note crossfades over 10 ms. |
 | Our own `Filter` class rather than `juce::dsp::StateVariableTPTFilter` | The same design (Simper's TPT state-variable filter, stable at any setting), but as a few plain numbers. JUCE's keeps its state in `std::vector`s, so copying it allocates, and a stolen voice's fading note copies its filter on the audio thread. It also gives band-pass and high-pass for step 15. |
+| Filter types: low-pass (default), high-pass, band-pass, all from one calculation, each with a gain of Q at the cutoff | The state-variable filter produces all three at once, so offering them costs almost nothing. With the same gain at the cutoff, Resonance behaves the same for every type, and switching types doesn't jump in level there. The band-pass is left unnormalised (its peak rises with resonance), matching the other two. |
+| A filter type change crossfades over 10 ms by blending the filter's outputs | At the cutoff, low-pass and high-pass are half a cycle apart, so an instant switch jumps by up to twice the note's level. Each voice keeps a smoothed "amount" per type and blends the three outputs; with one type chosen it's exactly that type's output (`1 × it + 0 × the others`), so nothing changes when the type isn't moving. No second filter is needed. |
 | Signal order: oscillator → filter → amp envelope | The standard subtractive synth order. The filter is linear, so this only matters once later steps make the filter's settings depend on the note. |
 | Resonance 0–100 % maps to Q 0.707–10, evenly on a log scale | 0 % is flat (no peak); 100 % is a +20 dB peak. This filter can't self-oscillate at any finite Q, so there's no runaway. |
 | Cutoff 20 Hz – 20 kHz, knob centre about 632 Hz | The range of hearing, skewed so equal turns are equal steps in pitch. It's capped just below Nyquist at low sample rates. |
@@ -104,7 +107,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 
 - **Tests:** `cmake --build build --config Release --target Tests`, then `ctest --test-dir build -C Release --output-on-failure`.
 - **Sound unchanged?** Record before a change and compare after; see the README.
-- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off.
+- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off. **The numbers drift with how busy the computer is** (by 15–25 % between sessions), so to judge a change, benchmark the previous commit at the same time: `git stash`, rebuild, benchmark, `git stash pop`, rebuild, benchmark. Step 15 measured this way cost nothing measurable.
 - **Prove a new test can fail:** break the code it protects on purpose, confirm the test fails, then restore the file and confirm it's byte-for-byte identical.
 - **pluginval** at strictness 10 on both Release and Debug builds, since Debug turns on JUCE's internal checks.
 - **Commits** are scanned for secrets by the gitleaks hook in `.githooks`.

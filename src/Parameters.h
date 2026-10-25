@@ -22,6 +22,12 @@ constexpr const char* ampReleaseId = "ampRelease";
 constexpr const char* filterEnabledId = "filterEnabled";
 constexpr const char* filterCutoffId = "filterCutoff";
 constexpr const char* filterResonanceId = "filterResonance";
+constexpr const char* filterTypeId = "filterType";
+
+// The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
+// its position in this list, so the order is permanent: new types go at the end.
+inline const juce::StringArray filterTypeNames { "Low-pass", "High-pass", "Band-pass" };
+constexpr int lowPassType = 0, highPassType = 1, bandPassType = 2;
 
 constexpr const char* stateTag = "Parameters";
 constexpr const char* stateVersionId = "stateVersion";

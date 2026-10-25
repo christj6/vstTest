@@ -48,10 +48,21 @@ public:
     // Clears what the filter remembers of earlier input, so the next sample starts it fresh.
     void reset() noexcept { ic1 = ic2 = 0.0f; }
 
+    // All three kinds of filtering of one sample, from the same calculation. At the cutoff each has a
+    // gain of Q: -3 dB with no resonance, rising to +20 dB at full resonance. Low-pass and high-pass
+    // fall 12 dB per octave away from the cutoff; band-pass falls 6 dB per octave either side.
+    struct Outputs
+    {
+        float lowPass;
+        float bandPass;
+        float highPass;
+    };
+
     // Filters one sample. Call exactly one of these per sample.
-    float processLowPass (float input) noexcept   { process (input); return low; }
-    float processBandPass (float input) noexcept  { process (input); return band; }
-    float processHighPass (float input) noexcept  { process (input); return input - k * band - low; }
+    Outputs processAll (float input) noexcept       { process (input); return { low, band, input - k * band - low }; }
+    float processLowPass (float input) noexcept     { process (input); return low; }
+    float processBandPass (float input) noexcept    { process (input); return band; }
+    float processHighPass (float input) noexcept    { process (input); return input - k * band - low; }
 
 private:
     void process (float input) noexcept
