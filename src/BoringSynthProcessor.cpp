@@ -32,10 +32,26 @@ void protectOutput (juce::AudioBuffer<float>& buffer)
 BoringSynthProcessor::BoringSynthProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
-    const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform,
-                                            *ampAttack, *ampDecay, *ampSustain, *ampRelease,
-                                            *filterEnabled, *filterCutoff, *filterResonance, *filterType, *filterKeyTracking, *filterVelocity,
-                                            *filterAttack, *filterDecay, *filterSustain, *filterRelease, *filterEnvAmount };
+    // Named, so a parameter can't be connected to the wrong field: they must be in VoiceParameters'
+    // order, and leaving one out doesn't compile.
+    const VoiceParameters voiceParameters { .velocitySensitivity = *velocitySensitivity,
+                                            .pitchBendRange = *pitchBendRange,
+                                            .waveform = *waveform,
+                                            .ampAttack = *ampAttack,
+                                            .ampDecay = *ampDecay,
+                                            .ampSustain = *ampSustain,
+                                            .ampRelease = *ampRelease,
+                                            .filterEnabled = *filterEnabled,
+                                            .filterCutoff = *filterCutoff,
+                                            .filterResonance = *filterResonance,
+                                            .filterType = *filterType,
+                                            .filterKeyTracking = *filterKeyTracking,
+                                            .filterVelocity = *filterVelocity,
+                                            .filterAttack = *filterAttack,
+                                            .filterDecay = *filterDecay,
+                                            .filterSustain = *filterSustain,
+                                            .filterRelease = *filterRelease,
+                                            .filterEnvAmount = *filterEnvAmount };
 
     for (int i = 0; i < numVoices; ++i)
         synth.addVoice (new SynthVoice (waveformTables, synth.getModulation(), voiceParameters));

@@ -23,7 +23,8 @@ struct SynthSound  : public juce::SynthesiserSound
 };
 
 // The plug-in's parameters a voice reads, as the processor's live, thread-safe values. A new
-// parameter that voices need goes here, and where the processor fills this in.
+// parameter that voices need goes here, and where the processor fills this in (by name, in this
+// order).
 struct VoiceParameters
 {
     const std::atomic<float>& velocitySensitivity; // 0 to 100 %, read when each note starts

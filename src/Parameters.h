@@ -12,8 +12,7 @@ constexpr const char* velocitySensitivityId = "velocitySensitivity";
 constexpr const char* pitchBendRangeId = "pitchBendRange";
 constexpr const char* waveformId = "waveform";
 
-// The amp (volume) envelope. "amp" because a filter envelope with its own attack, decay, sustain
-// and release comes later.
+// The amp (volume) envelope. "amp" to tell it apart from the filter envelope below.
 constexpr const char* ampAttackId = "ampAttack";
 constexpr const char* ampDecayId = "ampDecay";
 constexpr const char* ampSustainId = "ampSustain";
@@ -35,8 +34,8 @@ constexpr const char* filterEnvAmountId = "filterEnvAmount";
 // How much softer notes close the filter.
 constexpr const char* filterVelocityId = "filterVelocity";
 
-// The LFO, which every note shares. Its depth is a percentage, not a pitch, because later it can
-// move other things too.
+// The LFO, which every note shares. Its depth is a percentage, not a pitch, because it can move the
+// volume or the filter cutoff instead.
 constexpr const char* lfoRateId = "lfoRate";
 constexpr const char* lfoDepthId = "lfoDepth";
 constexpr const char* lfoDestinationId = "lfoDestination";

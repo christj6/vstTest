@@ -14,6 +14,56 @@ std::unique_ptr<juce::AudioProcessor> createProcessor()
     return std::unique_ptr<juce::AudioProcessor> (createPluginFilter());
 }
 
+// Every parameter added after Volume, the first. testStateFromOlderVersions removes all of these from
+// a saved state, as a project saved before they existed wouldn't have them. A new parameter goes at
+// the end; testEveryParameterIsCovered fails until it's here.
+const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange", "waveform",
+                                        "ampAttack", "ampDecay", "ampSustain", "ampRelease",
+                                        "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
+                                        "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
+                                        "filterVelocity",
+                                        "lfoRate", "lfoDepth", "lfoDestination" };
+
+juce::StringArray getParameterIds (juce::AudioProcessor& processor)
+{
+    juce::StringArray ids;
+
+    for (auto* parameter : processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+            ids.add (ranged->getParameterID());
+
+    return ids;
+}
+
+void testEveryParameterIsCovered()
+{
+    // The plug-in's parameters should be exactly Volume and laterParameterIds, so the saved-state
+    // tests below cover every one of them.
+    auto processor = createProcessor();
+    juce::StringArray known { "volume" };
+
+    for (auto* id : laterParameterIds)
+        known.add (id);
+
+    const auto actual = getParameterIds (*processor);
+    juce::StringArray notKnown, notInPlugin;
+
+    for (const auto& id : actual)
+        if (! known.contains (id))
+            notKnown.add (id);
+
+    for (const auto& id : known)
+        if (! actual.contains (id))
+            notInPlugin.add (id);
+
+    if (! notKnown.isEmpty() || ! notInPlugin.isEmpty())
+        std::printf ("      missing from laterParameterIds: %s; listed but not in the plug-in: %s\n",
+                     notKnown.joinIntoString (", ").toRawUTF8(), notInPlugin.joinIntoString (", ").toRawUTF8());
+
+    check (notKnown.isEmpty() && notInPlugin.isEmpty() && actual.size() == known.size(),
+           "every parameter is listed in laterParameterIds (or is Volume), so the saved-state tests cover it");
+}
+
 void testVolumeParameter()
 {
     auto processor = createProcessor();
@@ -354,6 +404,44 @@ void testStateRoundTrip()
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
 }
 
+void testEveryParameterRoundTrips()
+{
+    // Every parameter, including ones added later, set away from its default, saved and reloaded
+    // into a new instance, comes back as it was.
+    auto original = createProcessor();
+
+    // Snapped to a value the parameter can hold (a switch's 0.8 is on, 1), so what's saved is what's
+    // compared.
+    for (auto* parameter : original->getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+            ranged->setValueNotifyingHost (ranged->convertTo0to1 (ranged->convertFrom0to1 (ranged->getDefaultValue() < 0.5f ? 0.8f : 0.2f)));
+
+    juce::MemoryBlock state;
+    original->getStateInformation (state);
+
+    auto restored = createProcessor();
+    restored->setStateInformation (state.getData(), (int) state.getSize());
+
+    const auto originals = original->getParameters();
+    const auto restoreds = restored->getParameters();
+    juce::StringArray wrong;
+
+    for (int i = 0; i < originals.size(); ++i)
+    {
+        const auto value = originals[i]->getValue();
+        const auto movedFromDefault = std::abs (value - originals[i]->getDefaultValue()) > 0.01f;
+
+        if (! movedFromDefault || std::abs (restoreds[i]->getValue() - value) > 1.0e-5f)
+            wrong.add (originals[i]->getName (30));
+    }
+
+    if (! wrong.isEmpty())
+        std::printf ("      not restored (or not moved from the default): %s\n", wrong.joinIntoString (", ").toRawUTF8());
+
+    check (wrong.isEmpty() && originals.size() == restoreds.size(),
+           "every parameter, set away from its default, survives saving and reloading");
+}
+
 void testStateFromOlderVersions()
 {
     // Build the state a project saved when Volume was the only parameter would hold: a real saved
@@ -386,10 +474,7 @@ void testStateFromOlderVersions()
         return;
     }
 
-    for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
-                      "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
-                      "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
-                      "filterVelocity", "lfoRate", "lfoDepth", "lfoDestination" })
+    for (auto* id : laterParameterIds)
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -446,6 +531,7 @@ void testOldAndInvalidState()
 
 void runParameterTests()
 {
+    testEveryParameterIsCovered();
     testVolumeParameter();
     testVolumeText();
     testVelocitySensitivityParameter();
@@ -457,6 +543,7 @@ void runParameterTests()
     testFilterVelocityParameter();
     testLfoParameters();
     testStateRoundTrip();
+    testEveryParameterRoundTrips();
     testStateFromOlderVersions();
     testOldAndInvalidState();
 }

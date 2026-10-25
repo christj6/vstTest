@@ -74,7 +74,7 @@ SynthVoice::SynthVoice (const WaveformTables& waveformTables, const Modulation& 
     : tables (waveformTables),
       modulation (synthModulation),
       parameters (voiceParameters),
-      oscillator (waveformTables.get (0))
+      oscillator (waveformTables.get (sineWaveform))
 {
 }
 

@@ -75,7 +75,7 @@ private:
     std::atomic<float>* lfoDestination = parameters.getRawParameterValue (lfoDestinationId);
 
     // The LFO reads the sine's table.
-    Synth synth { waveformTables.get (0), { *lfoRate, *lfoDepth, *lfoDestination } };
+    Synth synth { waveformTables.get (sineWaveform), { .rate = *lfoRate, .depth = *lfoDepth, .destination = *lfoDestination } };
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

@@ -10,6 +10,7 @@ namespace boringsynth
 // The waveforms the oscillator can play, in the order the Waveform parameter lists them. A DAW saves
 // the choice as its position in this list, so the order is permanent: new waveforms go at the end.
 inline const juce::StringArray waveformNames { "Sine", "Triangle", "Saw", "Square" };
+constexpr int sineWaveform = 0, triangleWaveform = 1, sawWaveform = 2, squareWaveform = 3;
 
 // One cycle of each waveform at a phase from 0 to 2 pi, from -1 to 1 before loudness matching.
 // Every waveform is zero at phase 0, where notes start, so no note starts with a click.

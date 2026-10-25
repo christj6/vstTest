@@ -101,7 +101,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { waveformId, 1 },
                                                               "Waveform",
                                                               waveformNames,
-                                                              0));
+                                                              sineWaveform));
 
     // The defaults reproduce the plug-in before the envelope existed: full level at once, held
     // while the key is down, and a 5 ms fade on release. Decay only matters once Sustain is lowered.

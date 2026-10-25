@@ -11,12 +11,12 @@ float waveformShape (int waveform, double phase)
     {
         // Rises from 0 to 1 over the first quarter of the cycle, falls to -1 by the third quarter,
         // and rises back to 0.
-        case 1:
+        case triangleWaveform:
             return (float) (2.0 / pi * std::asin (std::sin (phase)));
 
         // Rises from 0 to 1 over the first half of the cycle, jumps to -1, and rises back to 0.
         // The sample on the jump is its midpoint, 0, which is what band-limiting settles on anyway.
-        case 2:
+        case sawWaveform:
             if (phase == pi)
                 return 0.0f;
 
@@ -24,7 +24,7 @@ float waveformShape (int waveform, double phase)
 
         // 1 for the first half of the cycle and -1 for the second, with the jumps (at 0 and half
         // way) at their midpoint, 0.
-        case 3:
+        case squareWaveform:
             if (phase == 0.0 || phase == pi)
                 return 0.0f;
 
@@ -41,9 +41,9 @@ float waveformGain (int waveform)
     // is 1, so each is scaled by the sine's RMS divided by its own.
     switch (waveform)
     {
-        case 1:
-        case 2:  return (float) std::sqrt (1.5);
-        case 3:  return (float) std::sqrt (0.5);
+        case triangleWaveform:
+        case sawWaveform:    return (float) std::sqrt (1.5);
+        case squareWaveform: return (float) std::sqrt (0.5);
         default: return 1.0f;
     }
 }
@@ -61,7 +61,7 @@ WaveformTables::WaveformTables()
 
 const BandLimitedWaveTable& WaveformTables::get (int waveform) const noexcept
 {
-    return tables[(size_t) (juce::isPositiveAndBelow (waveform, (int) tables.size()) ? waveform : 0)];
+    return tables[(size_t) (juce::isPositiveAndBelow (waveform, (int) tables.size()) ? waveform : sineWaveform)];
 }
 
 } // namespace boringsynth
