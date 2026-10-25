@@ -157,6 +157,34 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
 
+    // The filter envelope's shape defaults to a classic "pluck": bright at the start of each note,
+    // closing over 300 ms. It only matters once the amount is turned up, which defaults to 0: no
+    // effect, the behaviour before this existed.
+    layout.add (makeTimeParameter (filterAttackId, "Filter Attack", 0.0f, 0.0f));
+    layout.add (makeTimeParameter (filterDecayId, "Filter Decay", minDecaySeconds, 0.3f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterSustainId, 1 },
+                                                             "Filter Sustain",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+    layout.add (makeTimeParameter (filterReleaseId, "Filter Release", minReleaseSeconds, 0.3f));
+
+    // In octaves: how far the cutoff moves when the envelope is at its peak. Negative amounts move it
+    // down instead.
+    auto octavesToText = [] (float octaves, int)
+    {
+        return (octaves > 0.0f ? "+" : "") + juce::String (octaves, 2) + " oct";
+    };
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterEnvAmountId, 1 },
+                                                             "Filter Env Amount",
+                                                             juce::NormalisableRange<float> (-maxFilterEnvOctaves, maxFilterEnvOctaves, 0.01f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withStringFromValueFunction (octavesToText)));
+
     return layout;
 }
 

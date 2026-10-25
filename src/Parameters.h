@@ -25,6 +25,13 @@ constexpr const char* filterResonanceId = "filterResonance";
 constexpr const char* filterTypeId = "filterType";
 constexpr const char* filterKeyTrackingId = "filterKeyTracking";
 
+// The filter envelope, which moves each note's cutoff over time.
+constexpr const char* filterAttackId = "filterAttack";
+constexpr const char* filterDecayId = "filterDecay";
+constexpr const char* filterSustainId = "filterSustain";
+constexpr const char* filterReleaseId = "filterRelease";
+constexpr const char* filterEnvAmountId = "filterEnvAmount";
+
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.
 inline const juce::StringArray filterTypeNames { "Low-pass", "High-pass", "Band-pass" };
@@ -59,6 +66,10 @@ constexpr float envelopeKnobCentreSeconds = 0.5f;
 constexpr float minCutoffHz = 20.0f;
 constexpr float maxCutoffHz = 20000.0f;
 constexpr float cutoffKnobCentreHz = 632.46f;
+
+// How far the filter envelope can move the cutoff, in octaves either way, at its peak. Eight octaves
+// covers most of the range of hearing, which is about ten.
+constexpr float maxFilterEnvOctaves = 8.0f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

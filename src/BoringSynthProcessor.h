@@ -11,7 +11,7 @@
 // envelope. No editor yet. The pitch wheel bends notes and the sustain pedal holds them. The
 // parameters are the output volume, velocity sensitivity, pitch bend range, waveform, the amp
 // envelope's attack, decay, sustain and release, and the filter's on/off switch, type, cutoff,
-// resonance and key tracking.
+// resonance, key tracking, and its own envelope's attack, decay, sustain, release and amount.
 
 namespace boringsynth
 {
@@ -64,6 +64,11 @@ private:
     std::atomic<float>* filterResonance = parameters.getRawParameterValue (filterResonanceId);
     std::atomic<float>* filterType = parameters.getRawParameterValue (filterTypeId);
     std::atomic<float>* filterKeyTracking = parameters.getRawParameterValue (filterKeyTrackingId);
+    std::atomic<float>* filterAttack = parameters.getRawParameterValue (filterAttackId);
+    std::atomic<float>* filterDecay = parameters.getRawParameterValue (filterDecayId);
+    std::atomic<float>* filterSustain = parameters.getRawParameterValue (filterSustainId);
+    std::atomic<float>* filterRelease = parameters.getRawParameterValue (filterReleaseId);
+    std::atomic<float>* filterEnvAmount = parameters.getRawParameterValue (filterEnvAmountId);
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

@@ -347,6 +347,153 @@ void testKeyTrackingStaysInRange()
     check (std::abs (highOpen) < 0.5 && allFinite, "key tracking keeps the cutoff between 20 Hz and 20 kHz");
 }
 
+//==============================================================================
+struct FilterEnvelopeShape
+{
+    float attack = 0.0f, decay = 0.3f, sustainPercent = 0.0f, release = 0.3f;
+};
+
+ProcessorSetUp withFilterEnvelope (float cutoffHz, float amountOctaves, FilterEnvelopeShape shape, int waveform = sine)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        withFilter (cutoffHz, 0.0f, waveform) (p);
+        setParameter (p, "filterEnvAmount", amountOctaves);
+        setParameter (p, "filterAttack", shape.attack);
+        setParameter (p, "filterDecay", shape.decay);
+        setParameter (p, "filterSustain", shape.sustainPercent);
+        setParameter (p, "filterRelease", shape.release);
+    };
+}
+
+// The level of `filtered` against `unfiltered` between two sample positions, in dB.
+double gainBetween (const std::vector<float>& filtered, const std::vector<float>& unfiltered, int start, int end)
+{
+    return toDecibels (rmsBetween (filtered, start, end) / rmsBetween (unfiltered, start, end));
+}
+
+void testFilterEnvelopeNoEffectByDefault()
+{
+    // With the amount at 0, the envelope's shape makes no difference at all.
+    const auto plain = render ({ .events = heldNote, .setUp = withFilter (300.0f, 50.0f, saw) });
+    const auto reshaped = render ({ .events = heldNote,
+                                    .setUp = [] (juce::AudioProcessor& p)
+                                    {
+                                        withFilterEnvelope (300.0f, 0.0f, { 0.1f, 1.0f, 50.0f, 1.0f }, saw) (p);
+                                        setParameter (p, "filterResonance", 50.0f);
+                                    } });
+    check (plain == reshaped, "with the envelope amount at 0, the filter envelope has no effect");
+}
+
+void testFilterEnvelopeAmount()
+{
+    // With the envelope held at its peak (no attack, full sustain), the amount moves the cutoff by
+    // that many octaves. From two octaves below A4 (110 Hz), +2 octaves puts the cutoff right on
+    // A4 (440 Hz): 3 dB down. From two octaves above (1760 Hz), -2 octaves does the same.
+    const auto unfiltered = render ({ .events = heldNote });
+    const FilterEnvelopeShape held { 0.0f, 0.3f, 100.0f, 0.3f };
+    const auto up = gainBetween (render ({ .events = heldNote, .setUp = withFilterEnvelope (110.0f, 2.0f, held) }), unfiltered, 4800, 48000);
+    const auto down = gainBetween (render ({ .events = heldNote, .setUp = withFilterEnvelope (1760.0f, -2.0f, held) }), unfiltered, 4800, 48000);
+    std::printf ("      A4, envelope held open: +2 octaves from 110 Hz %+.2f dB, -2 octaves from 1760 Hz %+.2f dB (expected -3.01 for both)\n",
+                 up, down);
+    check (std::abs (up + 3.01) < 0.15 && std::abs (down + 3.01) < 0.15, "the envelope amount moves the cutoff by that many octaves, up or down");
+}
+
+void testFilterEnvelopeDecays()
+{
+    // A pluck: no attack, a 100 ms decay to 0 % sustain, +2 octaves from 110 Hz. The note starts bright
+    // (the cutoff near A4) and ends dark (the cutoff back at 110 Hz, about 24 dB down for A4).
+    const auto unfiltered = render ({ .events = heldNote });
+    const auto plucked = render ({ .events = heldNote, .setUp = withFilterEnvelope (110.0f, 2.0f, { 0.0f, 0.1f, 0.0f, 0.3f }) });
+    const auto start = gainBetween (plucked, unfiltered, 0, 480);
+    const auto end = gainBetween (plucked, unfiltered, 24000, 48000);
+    std::printf ("      pluck: %+.2f dB in the first 10 ms, %+.2f dB once it has decayed (expected about -24)\n", start, end);
+    check (start > -6.0 && std::abs (end + 24.1) < 1.0, "the filter envelope's decay closes the cutoff over the decay time");
+}
+
+void testFilterEnvelopeAttack()
+{
+    // A 100 ms attack to full sustain, +2 octaves from 110 Hz: dark at first, then open.
+    const auto unfiltered = render ({ .events = heldNote });
+    const auto swelling = render ({ .events = heldNote, .setUp = withFilterEnvelope (110.0f, 2.0f, { 0.1f, 0.3f, 100.0f, 0.3f }) });
+    const auto start = gainBetween (swelling, unfiltered, 0, 480);
+    const auto end = gainBetween (swelling, unfiltered, 9600, 48000);
+    std::printf ("      100 ms filter attack: %+.2f dB in the first 10 ms, %+.2f dB once open (expected -3.01)\n", start, end);
+    check (start < -12.0 && std::abs (end + 3.01) < 0.15, "the filter envelope's attack opens the cutoff over the attack time");
+}
+
+void testFilterEnvelopeRelease()
+{
+    // A long amp release keeps the note sounding after its key is released. With a 50 ms filter
+    // release, the cutoff falls from A4 back to 110 Hz during it: about 24 dB down by 100 ms later.
+    const std::vector<TimedMessage> events { { 0, noteOn (69) }, { 9600, noteOff (69) } };
+    const auto longAmpRelease = [] (juce::AudioProcessor& p) { setParameter (p, "ampRelease", 2.0f); };
+    const auto unfiltered = render ({ .events = events, .setUp = longAmpRelease });
+    const auto filtered = render ({ .events = events,
+                                    .setUp = [=] (juce::AudioProcessor& p)
+                                    {
+                                        withFilterEnvelope (110.0f, 2.0f, { 0.0f, 0.3f, 100.0f, 0.05f }) (p);
+                                        longAmpRelease (p);
+                                    } });
+    const auto beforeRelease = gainBetween (filtered, unfiltered, 4800, 9600);
+    const auto afterRelease = gainBetween (filtered, unfiltered, 9600 + 4800, 9600 + 9600);
+    std::printf ("      filter release: %+.2f dB before note off, %+.2f dB after it (expected -3.01, then about -24)\n",
+                 beforeRelease, afterRelease);
+    check (std::abs (beforeRelease + 3.01) < 0.15 && std::abs (afterRelease + 24.1) < 1.0,
+           "after note off, the filter envelope's release closes the cutoff over the release time");
+}
+
+void testEachNoteHasItsOwnFilterEnvelope()
+{
+    // One note is held; half a second later, when its pluck has long decayed, a second note starts.
+    // The second note should get its own bright start, exactly as if it were played alone. (With one
+    // envelope shared by all notes, "paraphonic", it would start where the first one had got to.)
+    const auto setUp = withFilterEnvelope (200.0f, 3.0f, { 0.0f, 0.1f, 0.0f, 0.3f }, saw);
+    const auto both = render ({ .events = { { 0, noteOn (57) }, { 24000, noteOn (64) } }, .setUp = setUp });
+    const auto firstAlone = render ({ .events = { { 0, noteOn (57) } }, .setUp = setUp });
+    const auto secondAlone = render ({ .events = { { 24000, noteOn (64) } }, .setUp = setUp });
+    float largestDifference = 0.0f;
+
+    for (size_t i = 24000; i < both.size(); ++i)
+        largestDifference = std::max (largestDifference, std::abs ((both[i] - firstAlone[i]) - secondAlone[i]));
+
+    check (largestDifference < 1.0e-6f, "each note gets its own filter envelope, starting when it starts");
+}
+
+void testFilterEnvelopeBlockSizeIndependence()
+{
+    const std::vector<TimedMessage> events { { 3, noteOn (48) }, { 1000, noteOn (60) }, { 3000, noteOff (48) } };
+    const auto setUp = withFilterEnvelope (300.0f, 3.0f, { 0.01f, 0.1f, 20.0f, 0.05f }, saw);
+    const auto blocksOf1 = render ({ .blockSize = 1, .numSamples = 8000, .events = events, .setUp = setUp });
+    const auto blocksOf7 = render ({ .blockSize = 7, .numSamples = 8000, .events = events, .setUp = setUp });
+    const auto blocksOf512 = render ({ .numSamples = 8000, .events = events, .setUp = setUp });
+    check (blocksOf1 == blocksOf7 && blocksOf7 == blocksOf512, "with the filter envelope, output is identical with block sizes 1, 7 and 512");
+}
+
+void testExtremeFilterEnvelopeStaysFinite()
+{
+    // The largest amounts both ways, the fastest decay and full resonance, on a saw chord.
+    bool allFinite = true;
+    float quietest = 1.0f;
+
+    for (auto amount : { 8.0f, -8.0f })
+    {
+        const auto output = render ({ .events = { { 0, noteOn (40) }, { 0, noteOn (52) }, { 9600, noteOn (64) } },
+                                      .setUp = [amount] (juce::AudioProcessor& p)
+                                      {
+                                          withFilterEnvelope (1000.0f, amount, { 0.0f, 0.005f, 0.0f, 0.005f }, saw) (p);
+                                          setParameter (p, "filterResonance", 100.0f);
+                                      } });
+
+        for (auto s : output)
+            allFinite = allFinite && std::isfinite (s);
+
+        quietest = std::min (quietest, peakBetween (output, 24000, 48000));
+    }
+
+    check (allFinite && quietest > 0.001f, "the most extreme filter envelope stays stable");
+}
+
 void testOpenFilterBarelyChanges()
 {
     // Switched on at its default, fully open, the filter should make almost no difference.
@@ -482,6 +629,14 @@ void runSoundTests()
     testFullKeyTracking();
     testHalfKeyTracking();
     testKeyTrackingStaysInRange();
+    testFilterEnvelopeNoEffectByDefault();
+    testFilterEnvelopeAmount();
+    testFilterEnvelopeDecays();
+    testFilterEnvelopeAttack();
+    testFilterEnvelopeRelease();
+    testEachNoteHasItsOwnFilterEnvelope();
+    testFilterEnvelopeBlockSizeIndependence();
+    testExtremeFilterEnvelopeStaysFinite();
 }
 
 } // namespace testing

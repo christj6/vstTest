@@ -26,7 +26,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking`, `filterAttack`, `filterDecay`, `filterSustain`, `filterRelease`, `filterEnvAmount` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Filter type choices, in order | `Low-pass`, `High-pass`, `Band-pass`. Saved by position, so new types may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
@@ -93,6 +93,10 @@ Anything that needs real work (building tables now, loading wavetable files late
 | Cutoff 20 Hz – 20 kHz, knob centre about 632 Hz | The range of hearing, skewed so equal turns are equal steps in pitch. It's capped just below Nyquist at low sample rates. |
 | Cutoff and resonance glide over 20 ms; coefficients are recalculated every 8 samples while gliding | Avoids zipper noise. Recalculating takes a `tan` and a `pow`; doing it every sample made a moving filter cost 3.5× as much (8.4 % of a core at 16 voices against 3.9 %), and 8 samples (0.17 ms) is far too short to hear as steps. The last sample of a glide always lands exactly on the new setting. |
 | Key tracking 0–100 %, default 0 %, around middle C (MIDI 60) | At 100 % the cutoff moves an octave per octave played, so every note keeps the same tone; at 0 % (the old behaviour) it's fixed, so high notes sound duller. At middle C the cutoff is exactly the knob's setting. The tracked cutoff stays within 20 Hz – 20 kHz. At 0 % the cutoff is multiplied by exactly 1, so nothing changes. |
+| A filter envelope per voice, its amount in octaves (−8 to +8, default 0) | Each note sweeps from its own key press, the reason for having a filter per voice. Octaves make the amount mean the same wherever the cutoff is: at the envelope's peak the cutoff is multiplied by 2^amount. At 0 the multiplier is exactly 1. |
+| The filter envelope itself isn't smoothed; only its amount knob glides | Smoothing the envelope would blunt fast plucks, its main use. The cutoff follows it sample by sample, with coefficients recalculated every 8 samples, as for any moving cutoff (about 5 % of a core with all 16 voices sweeping). |
+| The filter envelope's shape defaults to a pluck: no attack, 300 ms decay to 0 % sustain, 300 ms release | It has no effect until the amount is turned up, so the defaults are chosen to sound good the moment it is. |
+| The per-block coefficient refresh only runs when nothing moves the cutoff | Refreshing at block starts while the envelope moved made the output depend on the host's block size (caught by the block-size test). While anything moves the cutoff, the every-8-samples updates handle it, at the same moments whatever the block size. Each note also restarts that 8-sample count, so a note never depends on what its voice played before. |
 
 ## Known limitations
 
@@ -109,7 +113,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 
 - **Tests:** `cmake --build build --config Release --target Tests`, then `ctest --test-dir build -C Release --output-on-failure`.
 - **Sound unchanged?** Record before a change and compare after; see the README.
-- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off. **The numbers drift with how busy the computer is** (by 15–25 % between sessions), so to judge a change, benchmark the previous commit at the same time: `git stash`, rebuild, benchmark, `git stash pop`, rebuild, benchmark. Step 15 measured this way cost nothing measurable.
+- **Speed:** `Tests --benchmark` (Release build). Run it before and after anything that adds work per voice or per sample. Baseline on the development machine after step 14: 16 sine notes at about 43× real time (2.3 % of one CPU core, 0.25 ms of each 10.67 ms block); 16 saw notes with the pitch wheel moving at about 40×; 16 saw notes through the filter with its cutoff moving at about 25× (3.9 %). The filter costs nothing while it's off. Step 17 added a filter envelope case, measured in a slower session at about the same cost as the moving cutoff (5.1 % against 4.8 %). **The numbers drift with how busy the computer is** (by 15–25 % between sessions), so to judge a change, benchmark the previous commit at the same time: `git stash`, rebuild, benchmark, `git stash pop`, rebuild, benchmark. Step 15 measured this way cost nothing measurable.
 - **Prove a new test can fail:** break the code it protects on purpose, confirm the test fails, then restore the file and confirm it's byte-for-byte identical.
 - **pluginval** at strictness 10 on both Release and Debug builds, since Debug turns on JUCE's internal checks.
 - **Commits** are scanned for secrets by the gitleaks hook in `.githooks`.

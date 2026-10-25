@@ -41,10 +41,18 @@ struct VoiceParameters
     const std::atomic<float>& filterResonance;     // 0 to 100 %
     const std::atomic<float>& filterType;          // position in filterTypeNames
     const std::atomic<float>& filterKeyTracking;   // 0 to 100 %
+
+    // The filter envelope, read on every block.
+    const std::atomic<float>& filterAttack;        // seconds
+    const std::atomic<float>& filterDecay;         // seconds
+    const std::atomic<float>& filterSustain;       // 0 to 100 %
+    const std::atomic<float>& filterRelease;       // seconds
+    const std::atomic<float>& filterEnvAmount;     // octaves, -8 to 8
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel,
-// filtered (when the filter is on), and shaped over time by the amp envelope.
+// filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
+// time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:
@@ -103,14 +111,20 @@ private:
     // chosen type and 0 for the others, except while crossfading after the type changes.
     std::array<juce::SmoothedValue<float>, 3> filterTypeAmounts;
 
+    // Moves the cutoff up (or down) by filterEnvAmount octaves at its peak. The envelope itself isn't
+    // smoothed, so fast plucks stay sharp; only the amount knob glides.
+    Envelope filterEnvelope;
+    juce::SmoothedValue<float> filterEnvAmount; // octaves
+
     void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void updateFilterTargets();
-    float applyFilter (float input) noexcept;
+    float applyFilter (float input, float filterEnvelopeLevel) noexcept;
     int getCurrentFilterType() const;
     float getFilterCutoffTarget() const;
     double getBendRatio() const;
     const BandLimitedWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;
+    Envelope::Settings getFilterEnvelopeSettings() const;
 };
 
 } // namespace boringsynth

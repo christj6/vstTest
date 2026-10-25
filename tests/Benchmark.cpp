@@ -85,8 +85,8 @@ int runBenchmark()
         { "16 notes, saw, pitch wheel moving", true, true,
           [] (juce::AudioProcessor& p) { setParameter (p, "waveform", 2.0f); } },
 
-        // The filter's worst case: its cutoff changes on every block, so every voice works out its
-        // filter coefficients again on every sample.
+        // A moving filter: its cutoff changes on every block, so every voice keeps working out its
+        // filter coefficients again (every 8 samples).
         { "16 notes, saw, filter cutoff moving", true, false,
           [] (juce::AudioProcessor& p)
           {
@@ -98,6 +98,18 @@ int runBenchmark()
           {
               const auto sweep = 0.5 + 0.5 * std::sin (juce::MathConstants<double>::twoPi * blockStart / 96000.0);
               setParameter (p, "filterCutoff", (float) (200.0 * std::pow (50.0, sweep)));
+          } },
+
+        // The filter envelope: every voice moves its own cutoff all the time.
+        { "16 notes, saw, filter envelope", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 2.0f);
+              setParameter (p, "filterEnabled", 1.0f);
+              setParameter (p, "filterCutoff", 300.0f);
+              setParameter (p, "filterResonance", 50.0f);
+              setParameter (p, "filterEnvAmount", 4.0f);
+              setParameter (p, "filterSustain", 30.0f);
           } } };
 
     const auto blockBudgetMs = 1000.0 * benchmarkBlockSize / benchmarkSampleRate;

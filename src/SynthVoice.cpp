@@ -61,6 +61,14 @@ float blendFilterTypes (const Filter::Outputs& outputs, float lowPass, float hig
     return lowPass * outputs.lowPass + highPass * outputs.highPass + bandPass * outputs.bandPass;
 }
 
+// A cutoff moved by the filter envelope: up by amountOctaves when the envelope is at its peak (1),
+// not at all when it's at 0, and kept within the cutoff's range. With an amount of 0 it's exactly
+// the cutoff given.
+float envelopedCutoff (float cutoffHz, float amountOctaves, float envelopeLevel) noexcept
+{
+    return std::clamp (cutoffHz * std::exp2 (amountOctaves * envelopeLevel), minCutoffHz, maxCutoffHz);
+}
+
 } // namespace
 
 SynthVoice::SynthVoice (const WaveformTables& waveformTables, const VoiceParameters& voiceParameters)
@@ -97,6 +105,13 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
     ampEnvelope.noteOn();
 
+    // Every note gets its own filter envelope, starting from the beginning.
+    filterEnvelope.setSampleRate (sampleRate);
+    filterEnvelope.setSettings (getFilterEnvelopeSettings());
+    filterEnvelope.noteOn();
+    filterEnvAmount.reset (sampleRate, filterSmoothingSeconds);
+    filterEnvAmount.setCurrentAndTargetValue (parameters.filterEnvAmount.load());
+
     // A note played while the wheel is already pushed starts at the bent pitch, not gliding to it.
     bendPosition = pitchWheelToBend (currentPitchWheelPosition);
     frequencyRatio.reset (sampleRate, bendSmoothingSeconds);
@@ -112,8 +127,10 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     filterResonance.setCurrentAndTargetValue (parameters.filterResonance.load() / 100.0f);
     filterMix.reset (sampleRate, filterSwitchSeconds);
     filterMix.setCurrentAndTargetValue (filterOn ? 1.0f : 0.0f);
-    filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+    filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+                          Filter::resonanceToQ (filterResonance.getCurrentValue()));
     filterRunning = filterOn;
+    filterUpdateCountdown = 0;
 
     const auto type = getCurrentFilterType();
 
@@ -129,6 +146,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
     if (allowTailOff)
     {
         ampEnvelope.noteOff();
+        filterEnvelope.noteOff();
         return;
     }
 
@@ -176,12 +194,15 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
 
     // Envelope and filter knob moves apply to the note already playing.
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
+    filterEnvelope.setSettings (getFilterEnvelopeSettings());
     updateFilterTargets();
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
         const auto envelopeLevel = ampEnvelope.getNextSample();
-        const auto sample = envelopeLevel * noteLevel * applyFilter (oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue()));
+        const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
+        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue());
+        const auto sample = envelopeLevel * noteLevel * applyFilter (oscillatorSample, filterEnvelopeLevel);
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample (ch, i, sample);
@@ -233,6 +254,7 @@ void SynthVoice::updateFilterTargets()
     const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
     filterCutoff.setTargetValue (getFilterCutoffTarget());
     filterResonance.setTargetValue (parameters.filterResonance.load() / 100.0f);
+    filterEnvAmount.setTargetValue (parameters.filterEnvAmount.load());
 
     // A change of filter type crossfades from the old type's output to the new one's.
     const auto type = getCurrentFilterType();
@@ -250,7 +272,9 @@ void SynthVoice::updateFilterTargets()
         for (auto& amount : filterTypeAmounts)
             amount.setCurrentAndTargetValue (amount.getTargetValue());
 
-        filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+        filterEnvAmount.setCurrentAndTargetValue (filterEnvAmount.getTargetValue());
+        filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+                              Filter::resonanceToQ (filterResonance.getCurrentValue()));
         filterRunning = true;
     }
 
@@ -258,33 +282,43 @@ void SynthVoice::updateFilterTargets()
     if (! filterOn && filterRunning && ! filterMix.isSmoothing() && filterMix.getCurrentValue() == 0.0f)
         filterRunning = false;
 
-    // applyFilter keeps the coefficients up to date while the cutoff or resonance glides. If a
-    // change took effect without a glide, bring them up to date here instead.
-    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing())
-        filter.setCutoffAndQ (filterCutoff.getCurrentValue(), Filter::resonanceToQ (filterResonance.getCurrentValue()));
+    // applyFilter keeps the coefficients up to date while anything moves the cutoff or resonance. If
+    // a change took effect without a glide, bring them up to date here instead. Only when nothing is
+    // moving, though: block boundaries depend on the host, and the output mustn't.
+    const auto filterEnvelopeHasEffect = filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f;
+
+    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing() && ! filterEnvelopeHasEffect)
+        filter.setCutoffAndQ (envelopedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue(), filterEnvelope.getLevel()),
+                              Filter::resonanceToQ (filterResonance.getCurrentValue()));
 
     filterMix.setTargetValue (filterOn ? 1.0f : 0.0f);
 }
 
-float SynthVoice::applyFilter (float input) noexcept
+float SynthVoice::applyFilter (float input, float filterEnvelopeLevel) noexcept
 {
     const auto mix = filterMix.getNextValue();
 
     if (! filterRunning)
         return input;
 
-    // Coefficients only need working out again while the cutoff or resonance is still gliding, and
-    // then only every filterUpdateInterval samples, plus once more on the glide's last sample so it
-    // lands exactly on the new setting.
-    if (filterCutoff.isSmoothing() || filterResonance.isSmoothing())
+    // The cutoff moves while its knob or resonance glides, or while the filter envelope has any
+    // effect. Then the coefficients are worked out again every filterUpdateInterval samples, plus once
+    // more when everything stops, so the filter lands exactly on the final setting.
+    auto isMoving = [this]
+    {
+        return filterCutoff.isSmoothing() || filterResonance.isSmoothing()
+            || filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f;
+    };
+
+    if (isMoving())
     {
         const auto cutoff = filterCutoff.getNextValue();
         const auto resonance = filterResonance.getNextValue();
-        const auto glideFinished = ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing();
+        const auto amount = filterEnvAmount.getNextValue();
 
-        if (--filterUpdateCountdown <= 0 || glideFinished)
+        if (--filterUpdateCountdown <= 0 || ! isMoving())
         {
-            filter.setCutoffAndQ (cutoff, Filter::resonanceToQ (resonance));
+            filter.setCutoffAndQ (envelopedCutoff (cutoff, amount, filterEnvelopeLevel), Filter::resonanceToQ (resonance));
             filterUpdateCountdown = filterUpdateInterval;
         }
     }
@@ -335,6 +369,14 @@ Envelope::Settings SynthVoice::getAmpEnvelopeSettings() const
              parameters.ampDecay.load(),
              parameters.ampSustain.load() / 100.0f,
              parameters.ampRelease.load() };
+}
+
+Envelope::Settings SynthVoice::getFilterEnvelopeSettings() const
+{
+    return { parameters.filterAttack.load(),
+             parameters.filterDecay.load(),
+             parameters.filterSustain.load() / 100.0f,
+             parameters.filterRelease.load() };
 }
 
 } // namespace boringsynth

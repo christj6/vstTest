@@ -194,6 +194,38 @@ void testFilterParameters()
            "key tracking runs from 0 to 100 %, defaults to 0 % and displays as a number ('50')");
 }
 
+void testFilterEnvelopeParameters()
+{
+    auto processor = createProcessor();
+
+    // Spelled out on purpose, like 'volume' above.
+    bool allExist = true;
+
+    for (auto* id : { "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount" })
+        allExist = allExist && findParameter (*processor, id) != nullptr;
+
+    check (allExist, "parameter IDs 'filterAttack', 'filterDecay', 'filterSustain', 'filterRelease' and 'filterEnvAmount' exist");
+
+    if (! allExist)
+        return;
+
+    // The amount defaults to no effect; the shape to a pluck, ready for when the amount is turned up.
+    check (getParameter (*processor, "filterEnvAmount") == 0.0f
+               && getParameter (*processor, "filterAttack") == 0.0f
+               && std::abs (getParameter (*processor, "filterDecay") - 0.3f) < 1.0e-5f
+               && getParameter (*processor, "filterSustain") == 0.0f
+               && std::abs (getParameter (*processor, "filterRelease") - 0.3f) < 1.0e-5f,
+           "the filter envelope defaults to no effect (amount 0), shaped as a 300 ms pluck");
+
+    auto* amount = findParameter (*processor, "filterEnvAmount");
+    check (amount->getText (amount->convertTo0to1 (2.0f), 20) == "+2.00 oct"
+               && amount->getText (amount->convertTo0to1 (-1.5f), 20) == "-1.50 oct"
+               && amount->getText (amount->convertTo0to1 (0.0f), 20) == "0.00 oct",
+           "the envelope amount displays in octaves ('+2.00 oct', '-1.50 oct', '0.00 oct')");
+    check (std::abs (amount->convertFrom0to1 (0.0f) + 8.0f) < 0.001f && std::abs (amount->convertFrom0to1 (1.0f) - 8.0f) < 0.001f,
+           "the envelope amount runs from -8 to +8 octaves");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
@@ -210,6 +242,11 @@ void testStateRoundTrip()
     setParameter (*original, "filterResonance", 65.0f);
     setParameter (*original, "filterType", 1.0f);
     setParameter (*original, "filterKeyTracking", 80.0f);
+    setParameter (*original, "filterAttack", 0.02f);
+    setParameter (*original, "filterDecay", 0.8f);
+    setParameter (*original, "filterSustain", 30.0f);
+    setParameter (*original, "filterRelease", 1.5f);
+    setParameter (*original, "filterEnvAmount", -2.5f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -238,6 +275,12 @@ void testStateRoundTrip()
                && getParameter (*restored, "filterType") == 1.0f
                && std::abs (getParameter (*restored, "filterKeyTracking") - 80.0f) < 0.01f,
            "the filter settings (including its type, high-pass, and key tracking) survive saving and reloading");
+    check (std::abs (getParameter (*restored, "filterAttack") - 0.02f) < 0.0001f
+               && std::abs (getParameter (*restored, "filterDecay") - 0.8f) < 0.0001f
+               && std::abs (getParameter (*restored, "filterSustain") - 30.0f) < 0.01f
+               && std::abs (getParameter (*restored, "filterRelease") - 1.5f) < 0.0001f
+               && std::abs (getParameter (*restored, "filterEnvAmount") + 2.5f) < 0.001f,
+           "the filter envelope survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -259,6 +302,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "filterCutoff", 750.0f);
     setParameter (*original, "filterType", 2.0f);
     setParameter (*original, "filterKeyTracking", 80.0f);
+    setParameter (*original, "filterEnvAmount", 3.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -271,7 +315,8 @@ void testStateFromOlderVersions()
     }
 
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
-                      "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking" })
+                      "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
+                      "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -297,6 +342,7 @@ void testStateFromOlderVersions()
            "an older project loads with the filter off");
     check (getParameter (*loaded, "filterType") == 0.0f, "an older project loads with the low-pass filter type, its only type back then");
     check (getParameter (*loaded, "filterKeyTracking") == 0.0f, "an older project loads with no key tracking");
+    check (getParameter (*loaded, "filterEnvAmount") == 0.0f, "an older project loads with the filter envelope having no effect");
 }
 
 void testOldAndInvalidState()
@@ -330,6 +376,7 @@ void runParameterTests()
     testWaveformParameter();
     testAmpEnvelopeParameters();
     testFilterParameters();
+    testFilterEnvelopeParameters();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();
