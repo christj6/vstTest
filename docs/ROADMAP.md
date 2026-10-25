@@ -14,14 +14,13 @@ The plan for growing BoringSynth, one small step at a time, from a plain sine sy
 | 3. Oscillator | 8. Split into files, `Oscillator` class · 9. Sine read from a wave table · 10. Band-limited table levels (FFT) · 11. Waveform choice: sine, triangle, saw, square |
 | 4. Amp envelope | 12. ADSR amp envelope, our own `Envelope` class, with defaults that reproduce the old 5 ms fade · 13. Stolen voices fade their old note out over 5 ms instead of clicking |
 | 5. Filter | 14. Per-voice resonant low-pass filter (our own `Filter` class): an on/off switch (off by default), Cutoff and Resonance · 15. Filter type: low-pass, high-pass, band-pass, crossfading when changed · 16. Key tracking, 0–100 % around middle C · 17. A filter envelope per note, its amount in octaves · 18. Velocity → filter: softer notes darker, by up to 8 octaves |
-| 6. LFO (in progress) | 19. One shared, free-running LFO on pitch (vibrato): Rate and Depth, worked out once per sample for every voice · 20. LFO destination: pitch, volume (tremolo) or filter cutoff, crossfading when changed · 21a. The LFO's own shapes, each exactly within ±1 · 21b. LFO Shape: sine, triangle, saw or square, crossfading when changed, with the saw's and square's jumps as 5 ms ramps (band-limited tables were tried first and rejected; see DESIGN.md) |
+| 6. LFO (in progress) | 19. One shared, free-running LFO on pitch (vibrato): Rate and Depth, worked out once per sample for every voice · 20. LFO destination: pitch, volume (tremolo) or filter cutoff, crossfading when changed · 21a. The LFO's own shapes, each exactly within ±1 · 21b. LFO Shape: sine, triangle, saw or square, crossfading when changed, with the saw's and square's jumps as 5 ms ramps (band-limited tables were tried first and rejected; see DESIGN.md) · 22. Mod wheel → LFO depth, its amount 0–100 % on top of the knob |
 
 Along the way, the test tools also gained a reference render (`--record` / `--compare`), named render options, shared measuring helpers, and a CPU benchmark (`--benchmark`).
 
 ## Next
 
 **Phase 6: LFO**
-- 22. Mod wheel → LFO depth.
 - 23. Optional: retrigger on each note; tempo sync.
 
 **Phase 7: GUI and presets.** Milestone: a complete single-oscillator synth.

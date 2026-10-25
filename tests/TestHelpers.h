@@ -42,6 +42,12 @@ inline juce::MidiMessage noteOn (int note, int velocity = 100)
 
 inline juce::MidiMessage noteOff (int note) { return juce::MidiMessage::noteOff (1, note); }
 
+// A MIDI controller (the sustain pedal is 64, the mod wheel 1) moving to a value from 0 to 127.
+inline juce::MidiMessage controller (int number, int value, int channel = 1)
+{
+    return juce::MidiMessage::controllerEvent (channel, number, value);
+}
+
 // One A4 note held for a second, the starting point for most of the level tests.
 inline const std::vector<TimedMessage> heldNote { { 0, noteOn (69) } };
 

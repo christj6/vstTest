@@ -41,6 +41,9 @@ constexpr const char* lfoDepthId = "lfoDepth";
 constexpr const char* lfoDestinationId = "lfoDestination";
 constexpr const char* lfoShapeId = "lfoShape";
 
+// How much the mod wheel adds to the LFO's depth.
+constexpr const char* modWheelLfoDepthId = "modWheelLfoDepth";
+
 // What the LFO can move, in the order the LFO Destination parameter lists them. A DAW saves the
 // choice as its position in this list, so the order is permanent: new destinations go at the end.
 inline const juce::StringArray lfoDestinationNames { "Pitch", "Volume", "Filter Cutoff" };

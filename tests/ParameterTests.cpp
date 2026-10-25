@@ -22,7 +22,8 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
                                         "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
                                         "filterVelocity",
-                                        "lfoRate", "lfoDepth", "lfoDestination", "lfoShape" };
+                                        "lfoRate", "lfoDepth", "lfoDestination", "lfoShape",
+                                        "modWheelLfoDepth" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -350,6 +351,18 @@ void testLfoParameters()
 
     check (getParameter (*processor, "lfoShape") == 0.0f, "the LFO shape defaults to the first choice (sine)");
     check (shapesInOrder, "the LFO shapes are Sine, Triangle, Saw and Square, in that order");
+
+    // Spelled out on purpose, like the IDs above.
+    auto* modWheel = findParameter (*processor, "modWheelLfoDepth");
+    check (modWheel != nullptr, "parameter ID 'modWheelLfoDepth' exists");
+
+    if (modWheel == nullptr)
+        return;
+
+    check (getParameter (*processor, "modWheelLfoDepth") == 0.0f
+               && std::abs (modWheel->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
+               && modWheel->getText (modWheel->convertTo0to1 (25.0f), 20) == "25",
+           "Mod Wheel LFO Depth runs from 0 to 100 %, defaults to 0 % (the wheel ignored) and displays as a number ('25')");
 }
 
 void testStateRoundTrip()
@@ -378,6 +391,7 @@ void testStateRoundTrip()
     setParameter (*original, "lfoDepth", 35.0f);
     setParameter (*original, "lfoDestination", 2.0f);
     setParameter (*original, "lfoShape", 3.0f);
+    setParameter (*original, "modWheelLfoDepth", 40.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -417,6 +431,7 @@ void testStateRoundTrip()
            "the LFO's rate and depth survive saving and reloading");
     check (getParameter (*restored, "lfoDestination") == 2.0f, "the LFO destination (Filter Cutoff) survives saving and reloading");
     check (getParameter (*restored, "lfoShape") == 3.0f, "the LFO shape (Square) survives saving and reloading");
+    check (std::abs (getParameter (*restored, "modWheelLfoDepth") - 40.0f) < 0.01f, "Mod Wheel LFO Depth survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -482,6 +497,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoDepth", 35.0f);
     setParameter (*original, "lfoDestination", 1.0f);
     setParameter (*original, "lfoShape", 2.0f);
+    setParameter (*original, "modWheelLfoDepth", 60.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -525,6 +541,7 @@ void testStateFromOlderVersions()
            "an older project loads with the LFO at 5 Hz and no depth (no effect)");
     check (getParameter (*loaded, "lfoDestination") == 0.0f, "an older project loads with the LFO on the pitch, its only destination back then");
     check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
+    check (getParameter (*loaded, "modWheelLfoDepth") == 0.0f, "an older project loads with the mod wheel ignored, as it was");
 }
 
 void testOldAndInvalidState()

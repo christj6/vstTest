@@ -60,11 +60,6 @@ void testReleaseFade()
     check (tail > 200 && tail <= 240, "note off fades out over ~5 ms");
 }
 
-juce::MidiMessage controller (int number, int value, int channel = 1)
-{
-    return juce::MidiMessage::controllerEvent (channel, number, value);
-}
-
 constexpr int sustainPedal = 64;
 constexpr int sostenutoPedal = 66;
 

@@ -231,6 +231,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                               waveformNames,
                                                               sineWaveform));
 
+    // With the mod wheel fully up, this much is added to LFO Depth. Defaults to 0 %, which ignores the
+    // wheel: the behaviour before this existed.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { modWheelLfoDepthId, 1 },
+                                                             "Mod Wheel LFO Depth",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+
     return layout;
 }
 

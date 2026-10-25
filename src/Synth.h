@@ -50,13 +50,14 @@ private:
 // The plug-in's parameters the LFO reads, as the processor's live, thread-safe values.
 struct LfoParameters
 {
-    const std::atomic<float>& rate;        // Hz
-    const std::atomic<float>& depth;       // 0 to 100 %
-    const std::atomic<float>& destination; // position in lfoDestinationNames
-    const std::atomic<float>& shape;       // position in waveformNames
+    const std::atomic<float>& rate;          // Hz
+    const std::atomic<float>& depth;         // 0 to 100 %
+    const std::atomic<float>& destination;   // position in lfoDestinationNames
+    const std::atomic<float>& shape;         // position in waveformNames
+    const std::atomic<float>& modWheelDepth; // 0 to 100 %, added to depth with the wheel fully up
 };
 
-// JUCE's Synthesiser, plus the LFO that every voice shares.
+// JUCE's Synthesiser, plus the LFO that every voice shares, and the mod wheel that adds to its depth.
 //
 // JUCE's Synthesiser handles the sustain and sostenuto pedals by default (and ignores the soft
 // pedal). This plug-in keeps the sustain pedal, which nearly every keyboard has, and ignores
@@ -71,6 +72,7 @@ public:
     const Modulation& getModulation() const noexcept { return modulation; }
 
     void setCurrentPlaybackSampleRate (double newRate) override;
+    void handleController (int midiChannel, int controllerNumber, int controllerValue) override;
     void handleSostenutoPedal (int, bool) override {}
 
     // How long the saw's and square's jumps take, as ramps, in seconds: as long as the shortest
@@ -87,7 +89,11 @@ private:
     // One LFO for every note, running freely whether or not notes are playing, like a hardware
     // synth's.
     Lfo lfo;
-    juce::SmoothedValue<float> lfoDepth; // 0 to 1
+    juce::SmoothedValue<float> lfoDepth; // 0 to 1, the knob plus the mod wheel
+
+    // The mod wheel's position, from 0 (down) to 1 (fully up), from whichever MIDI channel moved it
+    // last. Only touched on the audio thread, where MIDI is handled.
+    float modWheel = 0.0f;
 
     // How much of the LFO each destination gets (indexed by position in lfoDestinationNames): 1 for
     // the chosen one and 0 for the others, except while crossfading after the destination changes.
@@ -95,6 +101,7 @@ private:
 
     Modulation modulation;
 
+    float getLfoDepthTarget() const;
     int getCurrentShape() const;
     int getCurrentDestination() const;
 };

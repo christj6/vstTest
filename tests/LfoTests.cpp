@@ -343,6 +343,118 @@ void testSquareTremoloDoesntClick()
 }
 
 //==============================================================================
+// The mod wheel, adding to the LFO's depth.
+
+constexpr int modWheel = 1, resetAllControllers = 121;
+
+ProcessorSetUp withModWheelLfo (float depthPercent, float modWheelPercent)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        withLfo (1.0f, depthPercent) (p);
+        setParameter (p, "modWheelLfoDepth", modWheelPercent);
+    };
+}
+
+// An A4 note with the mod wheel moved to `wheel` (0 to 127) just before it starts.
+std::vector<TimedMessage> noteWithModWheelAt (int wheel, int channel = 1)
+{
+    return { { 0, controller (modWheel, wheel, channel) }, { 0, noteOn (69) } };
+}
+
+void testModWheelIgnoredByDefault()
+{
+    // At its default of 0 %, moving the mod wheel makes no difference at all.
+    const std::vector<TimedMessage> wheelMoves { { 0, noteOn (69) },
+                                                 { 5000, controller (modWheel, 127) },
+                                                 { 20000, controller (modWheel, 64) } };
+    const auto withoutWheel = render ({ .events = heldNote, .setUp = withLfo (5.0f, 30.0f) });
+    const auto withWheel = render ({ .events = wheelMoves, .setUp = withLfo (5.0f, 30.0f) });
+    check (withoutWheel == withWheel, "with Mod Wheel LFO Depth at 0 %, the mod wheel has no effect");
+}
+
+void testModWheelAddsDepth()
+{
+    // With the wheel fully up, its amount is added to the depth knob: 50 % on its own, or 30 % on top
+    // of the knob's 20 %, both give 50 %, which moves the pitch 3 semitones either way. Halfway up
+    // (64 / 127) at 100 %, the depth is 64 / 127 too. Measured once the depth has glided there.
+    const auto halfWheel = 64.0f / 127.0f;
+    const auto wheelOnly = render ({ .events = noteWithModWheelAt (127), .setUp = withModWheelLfo (0.0f, 50.0f) });
+    const auto knobAndWheel = render ({ .events = noteWithModWheelAt (127), .setUp = withModWheelLfo (20.0f, 30.0f) });
+    const auto wheelHalfway = render ({ .events = noteWithModWheelAt (64), .setUp = withModWheelLfo (0.0f, 100.0f) });
+    std::printf ("      wheel fully up, adding 50 %%:\n");
+    auto worst = worstVibratoError (wheelOnly, 1.0, 3.0, { 0.25, 0.75 });
+    std::printf ("      knob at 20 %%, wheel fully up adding 30 %%:\n");
+    worst = std::max (worst, worstVibratoError (knobAndWheel, 1.0, 3.0, { 0.25, 0.75 }));
+    std::printf ("      wheel halfway, adding 100 %%:\n");
+    worst = std::max (worst, worstVibratoError (wheelHalfway, 1.0, 12.0 * halfWheel * halfWheel, { 0.25, 0.75 }));
+    check (worst < 0.002, "the mod wheel adds its amount, scaled by how far it's moved, to the LFO's depth");
+}
+
+void testModWheelDepthStopsAtFull()
+{
+    // The knob at 80 % plus the wheel's 100 % would be 180 %; the depth stops at 100 %, an octave
+    // either way.
+    const auto output = render ({ .events = noteWithModWheelAt (127), .setUp = withModWheelLfo (80.0f, 100.0f) });
+    const auto worst = worstVibratoError (output, 1.0, 12.0, { 0.25, 0.75 });
+    check (worst < 0.003, "the knob and the mod wheel together never take the depth past 100 %");
+}
+
+void testModWheelGlides()
+{
+    // The LFO's rate is set so it's at the top of its cycle when the wheel is pushed fully up, 100
+    // samples into a block, adding 100 %. The pitch should stay put until that very sample, then glide
+    // up over 20 ms rather than leaping an octave, and do so the same whatever the block size.
+    const auto wheelSample = changeSample + 100;
+    const auto rateHz = (float) (0.25 * testSampleRate / wheelSample);
+    const std::vector<TimedMessage> events { { 0, noteOn (69) }, { wheelSample, controller (modWheel, 127) } };
+    const auto setUp = [=] (juce::AudioProcessor& p)
+    {
+        withLfo (rateHz, 0.0f) (p);
+        setParameter (p, "modWheelLfoDepth", 100.0f);
+    };
+    const auto plain = render ({ .events = heldNote });
+    const auto output = render ({ .events = events, .setUp = setUp });
+    const auto untilWheel = std::equal (plain.begin(), plain.begin() + wheelSample + 1, output.begin());
+    const auto firstFiveMs = frequencyBetween (output, wheelSample, wheelSample + 240, testSampleRate);
+    const auto afterGlide = frequencyBetween (output, wheelSample + 960, wheelSample + 1920, testSampleRate);
+    std::printf ("      wheel pushed up at the LFO's peak: %.1f Hz in the first 5 ms, %.1f Hz after 20 ms (expected about 880)\n",
+                 firstFiveMs, afterGlide);
+    check (untilWheel && firstFiveMs < 460.0 && afterGlide > 870.0,
+           "a mod wheel move takes effect from its own sample, gliding rather than jumping");
+
+    auto renderInBlocksOf = [&] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize, .numSamples = 30000, .events = events, .setUp = setUp });
+    };
+    const auto blocksOf1 = renderInBlocksOf (1);
+    check (blocksOf1 == renderInBlocksOf (7) && blocksOf1 == renderInBlocksOf (512) && blocksOf1 == renderInBlocksOf (2048),
+           "with the mod wheel moving, output is identical with block sizes 1, 7, 512 and 2048");
+}
+
+void testResetAllControllersDropsTheWheel()
+{
+    // MIDI "reset all controllers" puts the wheel back down: with the wheel the only depth, the
+    // vibrato stops. Half a second later the note is back at 440 Hz where the vibrato would be at its
+    // lowest.
+    const std::vector<TimedMessage> events { { 0, controller (modWheel, 127) },
+                                             { 0, noteOn (69) },
+                                             { 12000, controller (resetAllControllers, 0) } };
+    const auto output = render ({ .events = events, .setUp = withModWheelLfo (0.0f, 50.0f) });
+    const auto atTrough = frequencyBetween (output, 36000 - 480, 36000 + 480, testSampleRate);
+    std::printf ("      wheel reset at 0.25 s: %.2f Hz at 0.75 s (370 Hz if the wheel were still up)\n", atTrough);
+    check (std::abs (atTrough - 440.0) < 0.5, "'reset all controllers' puts the mod wheel back down");
+}
+
+void testModWheelOnAnyChannel()
+{
+    // There's one LFO for every note, so the wheel counts whichever MIDI channel it comes on.
+    const auto channel1 = render ({ .events = noteWithModWheelAt (127, 1), .setUp = withModWheelLfo (0.0f, 50.0f) });
+    const auto channel2 = render ({ .events = noteWithModWheelAt (127, 2), .setUp = withModWheelLfo (0.0f, 50.0f) });
+    check (channel1 == channel2, "the mod wheel works on any MIDI channel");
+}
+
+//==============================================================================
 // The Lfo class on its own.
 
 // The jump width, in radians, the synth gives the LFO at a rate: 5 ms of its cycle.
@@ -517,6 +629,12 @@ void runLfoTests()
     testLfoShapesOnPitch();
     testShapeChangeCrossfades();
     testSquareTremoloDoesntClick();
+    testModWheelIgnoredByDefault();
+    testModWheelAddsDepth();
+    testModWheelDepthStopsAtFull();
+    testModWheelGlides();
+    testResetAllControllersDropsTheWheel();
+    testModWheelOnAnyChannel();
     testLfoShapesAreExactAwayFromJumps();
     testLfoShapesReachExactlyOne();
     testLfoJumpsTakeFiveMs();

@@ -17,6 +17,10 @@ constexpr double lfoDestinationSwitchSeconds = 0.01;
 // How long a change of LFO shape takes to fade from the old shape to the new one.
 constexpr double lfoShapeCrossfadeSeconds = 0.01;
 
+// MIDI controller numbers.
+constexpr int modWheelController = 1;
+constexpr int resetAllControllers = 121;
+
 // How far the LFO moves the pitch, in semitones either way, for a depth from 0 to 1. Squared, so
 // most of the knob goes to the small depths vibrato uses: 20 % is about half a semitone, and 100 %
 // is the full octave. At a depth of 0 it's exactly 0.
@@ -49,7 +53,7 @@ void Synth::setCurrentPlaybackSampleRate (double newRate)
     lfo.reset();
     lfo.setShape (getCurrentShape(), 0);
     lfoDepth.reset (newRate, lfoDepthSmoothingSeconds);
-    lfoDepth.setCurrentAndTargetValue (parameters.depth.load() / 100.0f);
+    lfoDepth.setCurrentAndTargetValue (getLfoDepthTarget());
 
     const auto destination = getCurrentDestination();
 
@@ -66,7 +70,8 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
     const auto lfoPhaseDelta = currentSampleRate > 0.0 ? juce::MathConstants<double>::twoPi * parameters.rate.load() / currentSampleRate
                                                        : 0.0;
     const auto lfoJumpSamples = lfoJumpSeconds * currentSampleRate;
-    lfoDepth.setTargetValue (parameters.depth.load() / 100.0f);
+    // Picks up moves of the depth knob and the mod wheel; either way the depth glides.
+    lfoDepth.setTargetValue (getLfoDepthTarget());
 
     // A change of shape fades from the old one to the new one.
     lfo.setShape (getCurrentShape(), juce::roundToInt (lfoShapeCrossfadeSeconds * currentSampleRate));
@@ -104,6 +109,24 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
     }
 }
 
+void Synth::handleController (int midiChannel, int controllerNumber, int controllerValue)
+{
+    // MIDI's mod wheel, controller 1 (its fine-resolution half, controller 33, is ignored), and
+    // "reset all controllers", 121, which puts it back down.
+    if (controllerNumber == modWheelController)
+        modWheel = (float) controllerValue / 127.0f;
+    else if (controllerNumber == resetAllControllers)
+        modWheel = 0.0f;
+
+    Synthesiser::handleController (midiChannel, controllerNumber, controllerValue);
+}
+
+// The LFO's depth, 0 to 1: the knob, plus the mod wheel scaled by how much it adds, at most 1. With
+// the wheel's amount at 0 it's exactly the knob.
+float Synth::getLfoDepthTarget() const
+{
+    return std::min (1.0f, parameters.depth.load() / 100.0f + parameters.modWheelDepth.load() / 100.0f * modWheel);
+}
 
 int Synth::getCurrentShape() const
 {
