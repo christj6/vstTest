@@ -26,7 +26,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 |------|-------|
 | Product name | `BoringSynth` (set once, as `BORINGSYNTH_PRODUCT_NAME` in `CMakeLists.txt`) |
 | Company / manufacturer code / plug-in code | `Jack` / `Jack` / `Brng` |
-| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking`, `filterAttack`, `filterDecay`, `filterSustain`, `filterRelease`, `filterEnvAmount` |
+| Parameter IDs | `volume`, `velocitySensitivity`, `pitchBendRange`, `waveform`, `ampAttack`, `ampDecay`, `ampSustain`, `ampRelease`, `filterEnabled`, `filterCutoff`, `filterResonance`, `filterType`, `filterKeyTracking`, `filterAttack`, `filterDecay`, `filterSustain`, `filterRelease`, `filterEnvAmount`, `filterVelocity` |
 | Waveform choices, in order | `Sine`, `Triangle`, `Saw`, `Square`. Saved by position, so new waveforms may only be **added at the end**. |
 | Filter type choices, in order | `Low-pass`, `High-pass`, `Band-pass`. Saved by position, so new types may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"` |
@@ -97,6 +97,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 | The filter envelope itself isn't smoothed; only its amount knob glides | Smoothing the envelope would blunt fast plucks, its main use. The cutoff follows it sample by sample, with coefficients recalculated every 8 samples, as for any moving cutoff (about 5 % of a core with all 16 voices sweeping). |
 | The filter envelope's shape defaults to a pluck: no attack, 300 ms decay to 0 % sustain, 300 ms release | It has no effect until the amount is turned up, so the defaults are chosen to sound good the moment it is. |
 | The per-block coefficient refresh only runs when nothing moves the cutoff | Refreshing at block starts while the envelope moved made the output depend on the host's block size (caught by the block-size test). While anything moves the cutoff, the every-8-samples updates handle it, at the same moments whatever the block size. Each note also restarts that 8-sample count, so a note never depends on what its voice played before. |
+| Velocity → filter lowers softer notes' cutoff by `amount × (1 − velocity)` octaves (0 to 8, default 0) | The same idea as Velocity Sensitivity: the hardest hit always gets exactly what the knobs set, and turning it up only changes softer notes. Octaves keep it meaning the same wherever the cutoff is, as for the envelope amount. It's a straight line in octaves, so velocity 64 gets about half the amount. It's applied with key tracking, to the cutoff's target, so moving the knob mid-note still glides; at 0 it multiplies by exactly 1. It moves the cutoff itself rather than scaling the filter envelope's amount (another common choice), so it works with the envelope off. |
 
 ## Known limitations
 
@@ -107,6 +108,7 @@ Anything that needs real work (building tables now, loading wavetable files late
 - **High resonance can get loud.** A +20 dB peak on a strong harmonic can push the output past full scale, where the output guard clips it. Real synths often compensate by lowering the level as resonance rises; worth listening for.
 - **The filter is perfectly clean.** Analog filters, and many digital ones, saturate (distort gently) when driven hard, which many people like. Ours doesn't, which also keeps it linear.
 - **Key tracking follows the note played, not pitch bends.** A note bent up an octave keeps the cutoff of the key that was pressed. Some synths track the bent pitch; that could be added later.
+- **Velocity only darkens.** Filter Velocity can lower softer notes' cutoff but not raise it, and it doesn't change how far the filter envelope sweeps. Scaling the envelope amount by velocity is a common alternative that could be added as its own parameter.
 - **Not yet checked by tools:** Steinberg's VST3 validator, and building on macOS or Linux. pluginval is run by hand, not from CTest.
 
 ## Working on it

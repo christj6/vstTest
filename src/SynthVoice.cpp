@@ -100,6 +100,7 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
     noteNumber = midiNote;
+    noteVelocity = velocity;
 
     ampEnvelope.setSampleRate (sampleRate);
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
@@ -336,13 +337,16 @@ int SynthVoice::getCurrentFilterType() const
     return juce::jlimit (0, filterTypeNames.size() - 1, juce::roundToInt (parameters.filterType.load()));
 }
 
-// The cutoff knob's setting, moved by key tracking: at 100 % it moves an octave for every octave the
-// note is above or below middle C; at 0 % it stays exactly where the knob says.
+// The cutoff knob's setting, moved by key tracking and velocity. Key tracking at 100 % moves it an
+// octave for every octave the note is above or below middle C. Velocity lowers it for softer notes,
+// by the Filter Velocity amount for the softest and not at all for the hardest. At 0 % tracking and
+// 0 octaves of velocity it stays exactly where the knob says.
 float SynthVoice::getFilterCutoffTarget() const
 {
     const auto tracking = parameters.filterKeyTracking.load() / 100.0f;
     const auto octavesFromReference = (float) (noteNumber - keyTrackingReferenceNote) / 12.0f;
-    const auto cutoff = parameters.filterCutoff.load() * std::exp2 (octavesFromReference * tracking);
+    const auto velocityOctaves = -parameters.filterVelocity.load() * (1.0f - noteVelocity);
+    const auto cutoff = parameters.filterCutoff.load() * std::exp2 (octavesFromReference * tracking + velocityOctaves);
     return std::clamp (cutoff, minCutoffHz, maxCutoffHz);
 }
 

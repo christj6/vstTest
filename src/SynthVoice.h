@@ -41,6 +41,7 @@ struct VoiceParameters
     const std::atomic<float>& filterResonance;     // 0 to 100 %
     const std::atomic<float>& filterType;          // position in filterTypeNames
     const std::atomic<float>& filterKeyTracking;   // 0 to 100 %
+    const std::atomic<float>& filterVelocity;      // octaves, 0 to 8
 
     // The filter envelope, read on every block.
     const std::atomic<float>& filterAttack;        // seconds
@@ -92,6 +93,7 @@ private:
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
     int noteNumber = 60;       // the MIDI note playing, for the filter's key tracking
+    float noteVelocity = 1.0f; // the note's velocity, 0 to 1, for velocity → filter
     Envelope ampEnvelope;
     std::optional<FadingNote> fadingNote;
 

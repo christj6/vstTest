@@ -226,6 +226,25 @@ void testFilterEnvelopeParameters()
            "the envelope amount runs from -8 to +8 octaves");
 }
 
+void testFilterVelocityParameter()
+{
+    auto processor = createProcessor();
+
+    // Spelled out on purpose, like 'volume' above.
+    auto* velocity = findParameter (*processor, "filterVelocity");
+    check (velocity != nullptr, "parameter ID 'filterVelocity' exists");
+
+    if (velocity == nullptr)
+        return;
+
+    check (getParameter (*processor, "filterVelocity") == 0.0f, "Filter Velocity defaults to 0 (velocity ignored)");
+    check (velocity->convertFrom0to1 (0.0f) == 0.0f && std::abs (velocity->convertFrom0to1 (1.0f) - 8.0f) < 0.001f,
+           "Filter Velocity runs from 0 to 8 octaves");
+    check (velocity->getText (velocity->convertTo0to1 (2.5f), 20) == "2.50 oct"
+               && velocity->getText (velocity->convertTo0to1 (0.0f), 20) == "0.00 oct",
+           "Filter Velocity displays in octaves ('2.50 oct', '0.00 oct')");
+}
+
 void testStateRoundTrip()
 {
     auto original = createProcessor();
@@ -247,6 +266,7 @@ void testStateRoundTrip()
     setParameter (*original, "filterSustain", 30.0f);
     setParameter (*original, "filterRelease", 1.5f);
     setParameter (*original, "filterEnvAmount", -2.5f);
+    setParameter (*original, "filterVelocity", 3.25f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -281,6 +301,7 @@ void testStateRoundTrip()
                && std::abs (getParameter (*restored, "filterRelease") - 1.5f) < 0.0001f
                && std::abs (getParameter (*restored, "filterEnvAmount") + 2.5f) < 0.001f,
            "the filter envelope survives saving and reloading");
+    check (std::abs (getParameter (*restored, "filterVelocity") - 3.25f) < 0.001f, "Filter Velocity survives saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -303,6 +324,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "filterType", 2.0f);
     setParameter (*original, "filterKeyTracking", 80.0f);
     setParameter (*original, "filterEnvAmount", 3.0f);
+    setParameter (*original, "filterVelocity", 5.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -316,7 +338,8 @@ void testStateFromOlderVersions()
 
     for (auto* id : { "velocitySensitivity", "pitchBendRange", "waveform", "ampAttack", "ampDecay", "ampSustain", "ampRelease",
                       "filterEnabled", "filterCutoff", "filterResonance", "filterType", "filterKeyTracking",
-                      "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount" })
+                      "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
+                      "filterVelocity" })
         if (auto* entry = xml->getChildByAttribute ("id", id))
             xml->removeChildElement (entry, true);
 
@@ -343,6 +366,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "filterType") == 0.0f, "an older project loads with the low-pass filter type, its only type back then");
     check (getParameter (*loaded, "filterKeyTracking") == 0.0f, "an older project loads with no key tracking");
     check (getParameter (*loaded, "filterEnvAmount") == 0.0f, "an older project loads with the filter envelope having no effect");
+    check (getParameter (*loaded, "filterVelocity") == 0.0f, "an older project loads with velocity not affecting the filter");
 }
 
 void testOldAndInvalidState()
@@ -377,6 +401,7 @@ void runParameterTests()
     testAmpEnvelopeParameters();
     testFilterParameters();
     testFilterEnvelopeParameters();
+    testFilterVelocityParameter();
     testStateRoundTrip();
     testStateFromOlderVersions();
     testOldAndInvalidState();

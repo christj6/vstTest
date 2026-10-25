@@ -34,7 +34,7 @@ BoringSynthProcessor::BoringSynthProcessor()
 {
     const VoiceParameters voiceParameters { *velocitySensitivity, *pitchBendRange, *waveform,
                                             *ampAttack, *ampDecay, *ampSustain, *ampRelease,
-                                            *filterEnabled, *filterCutoff, *filterResonance, *filterType, *filterKeyTracking,
+                                            *filterEnabled, *filterCutoff, *filterResonance, *filterType, *filterKeyTracking, *filterVelocity,
                                             *filterAttack, *filterDecay, *filterSustain, *filterRelease, *filterEnvAmount };
 
     for (int i = 0; i < numVoices; ++i)

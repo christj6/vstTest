@@ -185,6 +185,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                              juce::AudioParameterFloatAttributes()
                                                                  .withStringFromValueFunction (octavesToText)));
 
+    // In octaves: how far the cutoff of the softest notes is lowered. The hardest notes always get
+    // the cutoff the knob sets, as with Velocity Sensitivity and level. Defaults to 0, which ignores
+    // velocity: the behaviour before this existed.
+    auto velocityOctavesToText = [] (float octaves, int) { return juce::String (octaves, 2) + " oct"; };
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { filterVelocityId, 1 },
+                                                             "Filter Velocity",
+                                                             juce::NormalisableRange<float> (0.0f, maxFilterVelocityOctaves, 0.01f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withStringFromValueFunction (velocityOctavesToText)));
+
     return layout;
 }
 

@@ -348,6 +348,85 @@ void testKeyTrackingStaysInRange()
 }
 
 //==============================================================================
+// How much a low-pass filter at cutoffHz turns down an A4 sine played at the given MIDI velocity,
+// with the given Filter Velocity amount, in dB.
+double velocityFilteredGain (int velocity, float cutoffHz, float amountOctaves)
+{
+    const std::vector<TimedMessage> events { { 0, noteOn (69, velocity) } };
+    const auto unfiltered = rmsBetween (render ({ .events = events }), 4800, 48000);
+    const auto filtered = rmsBetween (render ({ .events = events,
+                                                .setUp = [=] (juce::AudioProcessor& p)
+                                                {
+                                                    withFilter (cutoffHz, 0.0f) (p);
+                                                    setParameter (p, "filterVelocity", amountOctaves);
+                                                } }),
+                                      4800, 48000);
+    return toDecibels (filtered / unfiltered);
+}
+
+void testNoFilterVelocityByDefault()
+{
+    // With the amount at 0, a soft note is filtered exactly like a hard one. (Velocity Sensitivity
+    // is 0 %, so their levels match too.)
+    const auto withAmount = [] (float amount)
+    {
+        return [=] (juce::AudioProcessor& p)
+        {
+            withFilter (440.0f, 50.0f, saw) (p);
+            setParameter (p, "filterVelocity", amount);
+        };
+    };
+    const auto soft = render ({ .events = { { 0, noteOn (69, 20) } }, .setUp = withAmount (0.0f) });
+    const auto hard = render ({ .events = { { 0, noteOn (69, 127) } }, .setUp = withAmount (0.0f) });
+    check (soft == hard, "with Filter Velocity at 0, velocity doesn't change the filter");
+}
+
+void testFullVelocityKeepsTheCutoff()
+{
+    // The hardest note always gets the cutoff the knob sets, however far the amount is turned up:
+    // A4 with the cutoff at 440 Hz is 3 dB down.
+    const auto gain = velocityFilteredGain (127, 440.0f, 4.0f);
+    std::printf ("      velocity 127, 4 octaves of Filter Velocity, cutoff 440 Hz: %+.2f dB (expected -3.01)\n", gain);
+    check (std::abs (gain + 3.01) < 0.15, "at full velocity the cutoff is exactly the knob's setting");
+}
+
+void testSofterNotesCloseTheFilter()
+{
+    // With 4 octaves of Filter Velocity, a note at velocity v has its cutoff lowered by
+    // 4 × (1 - v / 127) octaves. Setting the knob that far above A4 should put each note's cutoff
+    // right on A4: 3 dB down. Two velocities check that the octaves follow velocity in a straight line.
+    constexpr float amount = 4.0f;
+    double worst = 0.0;
+
+    for (auto velocity : { 64, 32 })
+    {
+        const auto octavesDown = amount * (1.0f - (float) velocity / 127.0f);
+        const auto gain = velocityFilteredGain (velocity, 440.0f * std::exp2 (octavesDown), amount);
+        std::printf ("      velocity %d, cutoff knob %.2f octaves above A4: %+.2f dB (expected -3.01)\n", velocity, octavesDown, gain);
+        worst = std::max (worst, std::abs (gain + 3.01));
+    }
+
+    // And a soft note with the knob on A4 is noticeably darker than a hard one.
+    const auto softAtKnob = velocityFilteredGain (32, 440.0f, amount);
+    std::printf ("      velocity 32, cutoff knob on A4: %+.2f dB (expected about -36)\n", softAtKnob);
+    check (worst < 0.15 && softAtKnob < -30.0, "softer notes lower the cutoff by the Filter Velocity amount times how soft they are");
+}
+
+void testExtremeFilterVelocityStaysInRange()
+{
+    // The softest note, the full 8 octaves and the cutoff already at 20 Hz: the cutoff stays at 20 Hz
+    // rather than going below it, and the output stays finite.
+    const auto output = render ({ .events = { { 0, noteOn (24, 1) } },
+                                  .setUp = [] (juce::AudioProcessor& p)
+                                  {
+                                      withFilter (20.0f, 100.0f, saw) (p);
+                                      setParameter (p, "filterVelocity", 8.0f);
+                                  } });
+    const auto atMinimum = render ({ .events = { { 0, noteOn (24, 1) } }, .setUp = withFilter (20.0f, 100.0f, saw) });
+    check (output == atMinimum, "Filter Velocity keeps the cutoff at or above 20 Hz");
+}
+
+//==============================================================================
 struct FilterEnvelopeShape
 {
     float attack = 0.0f, decay = 0.3f, sustainPercent = 0.0f, release = 0.3f;
@@ -629,6 +708,10 @@ void runSoundTests()
     testFullKeyTracking();
     testHalfKeyTracking();
     testKeyTrackingStaysInRange();
+    testNoFilterVelocityByDefault();
+    testFullVelocityKeepsTheCutoff();
+    testSofterNotesCloseTheFilter();
+    testExtremeFilterVelocityStaysInRange();
     testFilterEnvelopeNoEffectByDefault();
     testFilterEnvelopeAmount();
     testFilterEnvelopeDecays();

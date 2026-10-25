@@ -32,6 +32,9 @@ constexpr const char* filterSustainId = "filterSustain";
 constexpr const char* filterReleaseId = "filterRelease";
 constexpr const char* filterEnvAmountId = "filterEnvAmount";
 
+// How much softer notes close the filter.
+constexpr const char* filterVelocityId = "filterVelocity";
+
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.
 inline const juce::StringArray filterTypeNames { "Low-pass", "High-pass", "Band-pass" };
@@ -70,6 +73,10 @@ constexpr float cutoffKnobCentreHz = 632.46f;
 // How far the filter envelope can move the cutoff, in octaves either way, at its peak. Eight octaves
 // covers most of the range of hearing, which is about ten.
 constexpr float maxFilterEnvOctaves = 8.0f;
+
+// How far velocity can lower the cutoff of the softest notes, in octaves. The same reach as the
+// filter envelope.
+constexpr float maxFilterVelocityOctaves = 8.0f;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
