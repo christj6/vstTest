@@ -8,9 +8,9 @@
 
 // A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
-// envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. No editor
-// yet. The pitch wheel bends notes, the mod wheel can add to the LFO's depth, and the sustain pedal
-// holds notes. The parameters are the output volume, velocity sensitivity, pitch bend range,
+// envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
+// is JUCE's generic one, a row for each parameter. The pitch wheel bends notes, the mod wheel can add
+// to the LFO's depth, and the sustain pedal holds notes. The parameters are the output volume, velocity sensitivity, pitch bend range,
 // waveform, the amp envelope's attack, decay, sustain and release, the filter's on/off switch, type,
 // cutoff, resonance, key tracking, velocity amount, and its own envelope's attack, decay, sustain,
 // release and amount, the LFO's rate, depth, destination and shape, how much the mod wheel adds to
@@ -31,8 +31,8 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
-    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
-    bool hasEditor() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }

@@ -1,6 +1,7 @@
 # The plug-in's test program. NoteTests.cpp, ControlTests.cpp, SoundTests.cpp and LfoTests.cpp
 # render audio through the whole plug-in and check the output; ParameterTests.cpp checks parameters
-# and saved state; OscillatorTests.cpp, EnvelopeTests.cpp and FilterTests.cpp check those classes on their own.
+# and saved state, and EditorTests.cpp the plug-in's window; OscillatorTests.cpp, EnvelopeTests.cpp
+# and FilterTests.cpp check those classes on their own.
 # ReferenceRender.cpp is the --record / --compare check, and Benchmark.cpp is --benchmark.
 # Shared helpers are in TestHelpers.h and Measurements.h. New kinds of tests go in new files here,
 # with a run function declared in TestHelpers.h and called from Main.cpp.
@@ -15,6 +16,7 @@ target_sources(Tests PRIVATE
     SoundTests.cpp
     LfoTests.cpp
     ParameterTests.cpp
+    EditorTests.cpp
     OscillatorTests.cpp
     EnvelopeTests.cpp
     FilterTests.cpp

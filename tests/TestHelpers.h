@@ -170,6 +170,7 @@ void runControlTests();
 void runSoundTests();
 void runLfoTests();
 void runParameterTests();
+void runEditorTests();
 void runOscillatorTests();
 void runEnvelopeTests();
 void runFilterTests();

@@ -27,6 +27,7 @@ int main (int argc, char** argv)
     testing::runSoundTests();
     testing::runLfoTests();
     testing::runParameterTests();
+    testing::runEditorTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();
     testing::runFilterTests();
