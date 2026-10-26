@@ -551,6 +551,182 @@ void testRetriggerBlockSizeIndependence()
 }
 
 //==============================================================================
+// Tempo sync: the LFO's rate as a note length at the host's tempo, and its position locked to the
+// song's while the host plays.
+
+// LFO Sync Rate choices, spelled as the positions projects save, like the parameter tests.
+constexpr int wholeNote = 2, dottedQuarter = 6, quarter = 7, eighth = 10, eighthTriplet = 11, thirtySecond = 15;
+
+ProcessorSetUp withSyncedLfo (int syncRate, float depthPercent, int destination = pitch)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        withLfo (1.0f, depthPercent, destination) (p);
+        setParameter (p, "lfoSync", 1.0f);
+        setParameter (p, "lfoSyncRate", (float) syncRate);
+    };
+}
+
+// A host playing at `bpm`, its song `startQuarterNotes` in when rendering starts.
+std::function<juce::AudioPlayHead::PositionInfo (int)> hostPlaying (double bpm, double startQuarterNotes)
+{
+    return [=] (int blockStart)
+    {
+        juce::AudioPlayHead::PositionInfo position;
+        position.setBpm (bpm);
+        position.setPpqPosition (startQuarterNotes + blockStart / testSampleRate * bpm / 60.0);
+        position.setIsPlaying (true);
+        return position;
+    };
+}
+
+// A host stopped, with its tempo set to `bpm`.
+std::function<juce::AudioPlayHead::PositionInfo (int)> hostStopped (double bpm)
+{
+    return [=] (int)
+    {
+        juce::AudioPlayHead::PositionInfo position;
+        position.setBpm (bpm);
+        position.setPpqPosition (0.0);
+        position.setIsPlaying (false);
+        return position;
+    };
+}
+
+void testLfoSyncOffByDefault()
+{
+    // With sync off (the default), the host's tempo and song position make no difference.
+    const auto withoutHost = render ({ .events = heldNote, .setUp = withLfo (1.0f, 50.0f) });
+    const auto withHost = render ({ .events = heldNote, .setUp = withLfo (1.0f, 50.0f), .transport = hostPlaying (97.0, 3.3) });
+    check (withoutHost == withHost, "LFO Sync is off by default: the host's tempo makes no difference");
+}
+
+void testSyncedRateFollowsTheTempo()
+{
+    // A synced LFO runs at its note length at the tempo. With the host stopped (or no host) it runs
+    // freely, like the Rate knob's. Its speed should depend only on the length and the tempo:
+    //   - 1/4 at 120 BPM (the tempo used when the host gives none) and 1/8 at 60 BPM are both 2 Hz;
+    //   - a dotted 1/4 at 90 BPM is 1 Hz, the same as the Rate knob at 1 Hz (its centre, the one
+    //     setting it holds exactly: its skewed range rounds others, such as 2 Hz, by a hair);
+    //   - a 1/8 triplet at 150 BPM is 7.5 Hz, measured from the vibrato it gives.
+    const auto quarterAt120 = render ({ .events = heldNote, .setUp = withSyncedLfo (quarter, 50.0f) });
+    const auto eighthAt60 = render ({ .events = heldNote, .setUp = withSyncedLfo (eighth, 50.0f), .transport = hostStopped (60.0) });
+    const auto dottedQuarterAt90 = render ({ .events = heldNote, .setUp = withSyncedLfo (dottedQuarter, 50.0f), .transport = hostStopped (90.0) });
+    const auto oneHz = render ({ .events = heldNote, .setUp = withLfo (1.0f, 50.0f) });
+    const auto eighthTripletAt150 = render ({ .events = heldNote, .setUp = withSyncedLfo (eighthTriplet, 50.0f), .transport = hostStopped (150.0) });
+    check (quarterAt120 == eighthAt60, "a synced LFO's speed depends on its note length and the tempo (or 120 BPM without one)");
+    check (dottedQuarterAt90 == oneHz, "a synced LFO at 1 Hz runs exactly as the Rate knob at 1 Hz does");
+    std::printf ("      1/8 triplet at 150 BPM:\n");
+    check (worstVibratoError (eighthTripletAt150, 7.5, 3.0, { 0.5, 0.567, 0.633 }) < 0.003, "a 1/8 triplet at 150 BPM runs at 7.5 Hz");
+}
+
+void testSyncLocksToTheSong()
+{
+    // The host plays at 120 BPM from 3.3 quarter notes into the song; synced to 1/1, the LFO's cycle
+    // lasts 4 quarter notes (2 s). Its position should follow the song's: a cycle counted from the
+    // song's start, so here it begins 3.3 / 4 of the way through. (It's at 0 when the block starts,
+    // so it fades there over the first 5 ms.)
+    constexpr double startQuarterNotes = 3.3, bpm = 120.0;
+    const auto output = render ({ .events = heldNote, .setUp = withSyncedLfo (wholeNote, 50.0f), .transport = hostPlaying (bpm, startQuarterNotes) });
+    double worst = 0.0;
+
+    for (auto centre : { 0.2, 0.45, 0.8 })
+    {
+        const auto from = (int) (centre * testSampleRate) - 480;
+        double sum = 0.0;
+
+        for (int i = from; i < from + 960; ++i)
+        {
+            const auto cycles = (startQuarterNotes + i / testSampleRate * bpm / 60.0) / 4.0;
+            sum += 440.0 * std::exp2 (3.0 * std::sin (juce::MathConstants<double>::twoPi * cycles) / 12.0);
+        }
+
+        const auto measured = frequencyBetween (output, from, from + 960, testSampleRate);
+        std::printf ("      at %.2f s: %.2f Hz (expected %.2f)\n", centre, measured, sum / 960.0);
+        worst = std::max (worst, std::abs (measured / (sum / 960.0) - 1.0));
+    }
+
+    check (worst < 0.002, "while the host plays, a synced LFO's position follows the song's");
+}
+
+void testSyncedBlockSizeIndependence()
+{
+    // Locked to the song, the LFO is never moved in ordinary playback, so the host's block size makes
+    // no difference.
+    const std::vector<TimedMessage> events { { 3, noteOn (60) }, { 1000, noteOn (64) } };
+    auto renderInBlocksOf = [&] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize, .numSamples = 8000, .events = events,
+                         .setUp = withSyncedLfo (eighthTriplet, 60.0f, volume), .transport = hostPlaying (133.0, 7.77) });
+    };
+    const auto blocksOf1 = renderInBlocksOf (1);
+    check (blocksOf1 == renderInBlocksOf (7) && blocksOf1 == renderInBlocksOf (512) && blocksOf1 == renderInBlocksOf (2048),
+           "locked to the song, output is identical with block sizes 1, 7, 512 and 2048");
+}
+
+void testSongJumpFades()
+{
+    // Full-depth tremolo synced to 1/1 at 120 BPM. At a block start the host jumps back half a cycle
+    // in the song (as when it loops), taking the LFO from near its top (full level) to near its bottom
+    // (silence). It fades there over 5 ms rather than dropping at once; after that it's exactly where
+    // a song that had always been there would put it.
+    constexpr double bpm = 120.0, quartersPerSample = bpm / 60.0 / testSampleRate;
+    const auto changeQuarters = changeSample * quartersPerSample;
+    const auto beforeJump = 1.0 - changeQuarters; // the song is at 1 quarter note (just after the LFO's top) at the jump
+    const auto afterJump = 3.0 - changeQuarters;  // and then at 3 (just after its bottom)
+    auto transportWithJump = [=] (int blockStart)
+    {
+        return hostPlaying (bpm, blockStart < changeSample ? beforeJump : afterJump) (blockStart);
+    };
+    const auto setUp = withSyncedLfo (wholeNote, 100.0f, volume);
+    const auto jumped = render ({ .events = heldNote, .setUp = setUp, .transport = transportWithJump });
+    const auto alwaysThere = render ({ .events = heldNote, .setUp = setUp, .transport = hostPlaying (bpm, afterJump) });
+    const auto steady = largestStep (std::vector<float> (jumped.begin() + changeSample - 960, jumped.begin() + changeSample));
+    const auto atJump = largestStep (std::vector<float> (jumped.begin() + changeSample - 10, jumped.begin() + changeSample + 480));
+    float differenceAfterFade = 0.0f;
+
+    for (int i = changeSample + 240; i < 48000; ++i)
+        differenceAfterFade = std::max (differenceAfterFade, std::abs (jumped[(size_t) i] - alwaysThere[(size_t) i]));
+
+    std::printf ("      song jump: largest step %.4f before it, %.4f around it; afterwards %.1e from a song that was always there\n",
+                 steady, atJump, differenceAfterFade);
+    check (atJump <= steady * 1.1f, "when the song jumps, a synced LFO fades to its new position rather than jumping");
+    check (differenceAfterFade < 1.0e-5f, "after the fade, the LFO is where the song's new position puts it");
+}
+
+void testRetriggerWinsOverSync()
+{
+    // Synced to 1/1 at 120 BPM (a 2 s cycle) with the host playing, but with retrigger on, a note at
+    // 0.37 s starts the LFO from the beginning of its cycle: at its top half a second after the note.
+    // The song starts 1.3 quarter notes in, so it would put the LFO half a cycle away when the note
+    // starts (2.04 quarter notes in): at its bottom then, not its top.
+    constexpr int noteStart = 17760;
+    const auto output = render ({ .numSamples = 72000,
+                                  .events = { { noteStart, noteOn (69) } },
+                                  .setUp = [] (juce::AudioProcessor& p)
+                                  {
+                                      withSyncedLfo (wholeNote, 50.0f) (p);
+                                      setParameter (p, "lfoRetrigger", 1.0f);
+                                  },
+                                  .transport = hostPlaying (120.0, 1.3) });
+    const auto from = noteStart + 24000 - 480;
+    const auto measured = frequencyBetween (output, from, from + 960, testSampleRate);
+    const auto expected = expectedVibratoFrequency (0.5, 3.0, from - noteStart, from - noteStart + 960, sine);
+    std::printf ("      half a second after the note: %.2f Hz (expected %.2f)\n", measured, expected);
+    check (std::abs (measured / expected - 1.0) < 0.002, "with retrigger on, notes restart a synced LFO rather than the song placing it");
+}
+
+void testVeryFastSyncIsCapped()
+{
+    // 1/32 at 375 BPM is 50 Hz, the fastest a synced LFO runs; at 600 BPM it would be 80 Hz, but it
+    // stays at 50.
+    const auto setUp = withSyncedLfo (thirtySecond, 100.0f, volume);
+    const auto at375 = render ({ .events = heldNote, .setUp = setUp, .transport = hostStopped (375.0) });
+    const auto at600 = render ({ .events = heldNote, .setUp = setUp, .transport = hostStopped (600.0) });
+    check (at375 == at600, "a synced LFO runs no faster than 50 Hz, whatever the tempo");
+}
+
+//==============================================================================
 // The Lfo class on its own.
 
 // The jump width, in radians, the synth gives the LFO at a rate: 5 ms of its cycle.
@@ -773,6 +949,13 @@ void runLfoTests()
     testRetriggerStartsEachNoteAtTheBeginning();
     testRetriggerFadesNotesAlreadySounding();
     testRetriggerBlockSizeIndependence();
+    testLfoSyncOffByDefault();
+    testSyncedRateFollowsTheTempo();
+    testSyncLocksToTheSong();
+    testSyncedBlockSizeIndependence();
+    testSongJumpFades();
+    testRetriggerWinsOverSync();
+    testVeryFastSyncIsCapped();
     testLfoShapesAreExactAwayFromJumps();
     testLfoShapesReachExactlyOne();
     testLfoJumpsTakeFiveMs();

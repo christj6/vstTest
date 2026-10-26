@@ -28,13 +28,16 @@ public:
         fadeRemaining = 0;
     }
 
-    // Starts the wave again from the beginning of its cycle, fading from where it had got to over
-    // crossfadeSamples samples.
-    void restart (int crossfadeSamples) noexcept
+    // Starts the wave again from newPhase (0 up to 2 pi; by default the beginning of its cycle),
+    // fading from where it had got to over crossfadeSamples samples.
+    void restart (int crossfadeSamples, double newPhase = 0.0) noexcept
     {
         startFade (crossfadeSamples);
-        phase = 0.0;
+        phase = newPhase;
     }
+
+    // How far through its cycle the wave is, from 0 up to 2 pi.
+    double getPhase() const noexcept { return phase; }
 
     // Switches to another shape. With crossfadeSamples of 0 it switches at once; otherwise it fades
     // from the old shape to the new one over that many samples, so a change doesn't jump.

@@ -78,12 +78,30 @@ struct RenderOptions
     // Runs before each block with the block's first sample position, e.g. to automate a parameter
     // mid-render the way a host does.
     BlockHook beforeEachBlock;
+
+    // What the host's play head says (tempo, song position, playing or not) at each block's first
+    // sample position. Without it the plug-in has no play head, like a host that doesn't give one.
+    std::function<juce::AudioPlayHead::PositionInfo (int blockStart)> transport;
+};
+
+// A host's play head, saying what RenderOptions::transport gives for the current block.
+struct TestPlayHead  : public juce::AudioPlayHead
+{
+    std::function<PositionInfo (int blockStart)> transport;
+    int blockStart = 0;
+
+    juce::Optional<PositionInfo> getPosition() const override { return transport (blockStart); }
 };
 
 // Renders channel 0 of the plug-in's output.
 inline std::vector<float> render (const RenderOptions& options)
 {
+    TestPlayHead playHead;
+    playHead.transport = options.transport;
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+
+    if (options.transport)
+        processor->setPlayHead (&playHead);
 
     if (options.setUp)
         options.setUp (*processor);
@@ -108,6 +126,7 @@ inline std::vector<float> render (const RenderOptions& options)
         if (options.beforeEachBlock)
             options.beforeEachBlock (*processor, blockStart);
 
+        playHead.blockStart = blockStart;
         processor->processBlock (buffer, midi);
 
         for (int i = 0; i < numThisBlock; ++i)

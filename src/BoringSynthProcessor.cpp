@@ -27,6 +27,29 @@ void protectOutput (juce::AudioBuffer<float>& buffer)
     }
 }
 
+// What the host's play head says about its transport, if it has one: some hosts leave out the tempo
+// or the song position, and some (and the tests, unless they give one) have no play head at all.
+Transport readTransport (juce::AudioPlayHead* playHead)
+{
+    Transport transport;
+
+    if (playHead == nullptr)
+        return transport;
+
+    if (const auto position = playHead->getPosition())
+    {
+        if (const auto bpm = position->getBpm())
+            transport.tempoBpm = *bpm;
+
+        if (const auto quarterNotes = position->getPpqPosition())
+            transport.songPositionQuarterNotes = *quarterNotes;
+
+        transport.isPlaying = position->getIsPlaying();
+    }
+
+    return transport;
+}
+
 } // namespace
 
 BoringSynthProcessor::BoringSynthProcessor()
@@ -83,6 +106,7 @@ void BoringSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+    synth.setTransport (readTransport (getPlayHead()));
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
     volumeGain.setTargetValue (getVolumeGain());
     volumeGain.applyGain (buffer, buffer.getNumSamples());

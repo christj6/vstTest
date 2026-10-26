@@ -42,6 +42,20 @@ constexpr const char* lfoDestinationId = "lfoDestination";
 constexpr const char* lfoShapeId = "lfoShape";
 constexpr const char* lfoRetriggerId = "lfoRetrigger";
 
+// Tempo sync: the LFO's rate set as a note length at the host's tempo, instead of in Hz.
+constexpr const char* lfoSyncId = "lfoSync";
+constexpr const char* lfoSyncRateId = "lfoSyncRate";
+
+// The note lengths a synced LFO's cycle can last, in the order the LFO Sync Rate parameter lists
+// them, slowest first: "." is dotted (one and a half times as long) and "T" a triplet (two thirds).
+// A DAW saves the choice as its position in this list, so the order is permanent: new lengths go at
+// the end. lfoSyncRateQuarterNotes gives each one's length in quarter notes, in the same order.
+inline const juce::StringArray lfoSyncRateNames { "4/1", "2/1", "1/1", "1/2.", "1/2", "1/2T", "1/4.", "1/4",
+                                                  "1/4T", "1/8.", "1/8", "1/8T", "1/16.", "1/16", "1/16T", "1/32" };
+constexpr double lfoSyncRateQuarterNotes[] { 16.0, 8.0, 4.0, 3.0, 2.0, 4.0 / 3.0, 1.5, 1.0,
+                                             2.0 / 3.0, 0.75, 0.5, 1.0 / 3.0, 0.375, 0.25, 1.0 / 6.0, 0.125 };
+constexpr int defaultLfoSyncRate = 7; // 1/4
+
 // How much the mod wheel adds to the LFO's depth.
 constexpr const char* modWheelLfoDepthId = "modWheelLfoDepth";
 
@@ -106,6 +120,13 @@ constexpr float maxLfoPitchSemitones = 12.0f;
 // How far the LFO at full depth moves the filter cutoff, in octaves either way: an eight-octave
 // sweep, for the big "wobble" this is used for.
 constexpr float maxLfoCutoffOctaves = 4.0f;
+
+// The tempo a synced LFO follows when the host doesn't say.
+constexpr double defaultTempoBpm = 120.0;
+
+// The fastest a synced LFO runs, so its 5 ms ramps always fit in its cycle. Only 1/32 above 375 BPM
+// reaches it.
+constexpr double maxSyncedLfoRateHz = 50.0;
 
 // Every parameter the plug-in has, with its range, default and display text.
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

@@ -14,7 +14,8 @@
 // waveform, the amp envelope's attack, decay, sustain and release, the filter's on/off switch, type,
 // cutoff, resonance, key tracking, velocity amount, and its own envelope's attack, decay, sustain,
 // release and amount, the LFO's rate, depth, destination and shape, how much the mod wheel adds to
-// the LFO's depth, and whether each note restarts the LFO.
+// the LFO's depth, whether each note restarts the LFO, and whether its rate is synced to the host's
+// tempo, as a note length.
 
 namespace boringsynth
 {
@@ -77,13 +78,17 @@ private:
     std::atomic<float>* lfoShape = parameters.getRawParameterValue (lfoShapeId);
     std::atomic<float>* modWheelLfoDepth = parameters.getRawParameterValue (modWheelLfoDepthId);
     std::atomic<float>* lfoRetrigger = parameters.getRawParameterValue (lfoRetriggerId);
+    std::atomic<float>* lfoSync = parameters.getRawParameterValue (lfoSyncId);
+    std::atomic<float>* lfoSyncRate = parameters.getRawParameterValue (lfoSyncRateId);
 
     Synth synth { { .rate = *lfoRate,
                     .depth = *lfoDepth,
                     .destination = *lfoDestination,
                     .shape = *lfoShape,
                     .modWheelDepth = *modWheelLfoDepth,
-                    .retrigger = *lfoRetrigger } };
+                    .retrigger = *lfoRetrigger,
+                    .sync = *lfoSync,
+                    .syncRate = *lfoSyncRate } };
 
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.

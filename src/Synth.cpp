@@ -21,6 +21,11 @@ constexpr double lfoShapeCrossfadeSeconds = 0.01;
 constexpr int modWheelController = 1;
 constexpr int resetAllControllers = 121;
 
+// How far, as a fraction of its cycle, a synced LFO may drift from the song's position before it's
+// moved back (with a fade). It never drifts that far in ordinary playback, so only loops, jumps and
+// starting playback move it, and the output doesn't depend on the host's block size.
+constexpr double lfoSyncTolerance = 1.0e-4;
+
 // How far the LFO moves the pitch, in semitones either way, for a depth from 0 to 1. Squared, so
 // most of the knob goes to the small depths vibrato uses: 20 % is about half a semitone, and 100 %
 // is the full octave. At a depth of 0 it's exactly 0.
@@ -67,8 +72,7 @@ void Synth::setCurrentPlaybackSampleRate (double newRate)
 void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample, int numSamples)
 {
     const auto currentSampleRate = getSampleRate();
-    const auto lfoPhaseDelta = currentSampleRate > 0.0 ? juce::MathConstants<double>::twoPi * parameters.rate.load() / currentSampleRate
-                                                       : 0.0;
+    const auto lfoPhaseDelta = currentSampleRate > 0.0 ? juce::MathConstants<double>::twoPi * getLfoRateHz() / currentSampleRate : 0.0;
     const auto lfoJumpSamples = lfoJumpSeconds * currentSampleRate;
     // Picks up moves of the depth knob and the mod wheel; either way the depth glides.
     lfoDepth.setTargetValue (getLfoDepthTarget());
@@ -130,6 +134,49 @@ void Synth::handleController (int midiChannel, int controllerNumber, int control
         modWheel = 0.0f;
 
     Synthesiser::handleController (midiChannel, controllerNumber, controllerValue);
+}
+
+void Synth::setTransport (const Transport& transport)
+{
+    if (transport.tempoBpm.has_value() && *transport.tempoBpm > 0.0)
+        tempoBpm = *transport.tempoBpm;
+
+    // Synced, and while the song plays, the LFO's position follows the song's: one cycle every so many
+    // quarter notes, counted from the start of the song. Unless notes retrigger it, which wins. If it
+    // has drifted (which only a loop, a jump or starting playback does), it fades to where it should be.
+    const auto followSong = isSynced() && parameters.retrigger.load() < 0.5f
+                         && transport.isPlaying && transport.songPositionQuarterNotes.has_value();
+
+    if (! followSong)
+        return;
+
+    constexpr auto twoPi = juce::MathConstants<double>::twoPi;
+    const auto cycles = *transport.songPositionQuarterNotes / getSyncedCycleQuarterNotes();
+    const auto songPhase = twoPi * (cycles - std::floor (cycles));
+    const auto drift = std::remainder (songPhase - lfo.getPhase(), twoPi) / twoPi;
+
+    if (std::abs (drift) > lfoSyncTolerance)
+        lfo.restart (juce::roundToInt (lfoJumpSeconds * getSampleRate()), songPhase < twoPi ? songPhase : 0.0);
+}
+
+// The LFO's rate in Hz: the knob's, or synced, a cycle every so many quarter notes at the tempo, at
+// most maxSyncedLfoRateHz.
+double Synth::getLfoRateHz() const
+{
+    if (! isSynced())
+        return parameters.rate.load();
+
+    return std::min (tempoBpm / 60.0 / getSyncedCycleQuarterNotes(), maxSyncedLfoRateHz);
+}
+
+double Synth::getSyncedCycleQuarterNotes() const
+{
+    return lfoSyncRateQuarterNotes[juce::jlimit (0, lfoSyncRateNames.size() - 1, juce::roundToInt (parameters.syncRate.load()))];
+}
+
+bool Synth::isSynced() const
+{
+    return parameters.sync.load() >= 0.5f;
 }
 
 // The LFO's depth, 0 to 1: the knob, plus the mod wheel scaled by how much it adds, at most 1. With

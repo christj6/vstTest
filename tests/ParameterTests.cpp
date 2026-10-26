@@ -23,7 +23,7 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
                                         "filterVelocity",
                                         "lfoRate", "lfoDepth", "lfoDestination", "lfoShape",
-                                        "modWheelLfoDepth", "lfoRetrigger" };
+                                        "modWheelLfoDepth", "lfoRetrigger", "lfoSync", "lfoSyncRate" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -367,6 +367,24 @@ void testLfoParameters()
     // Spelled out on purpose, like the IDs above.
     check (findParameter (*processor, "lfoRetrigger") != nullptr, "parameter ID 'lfoRetrigger' exists");
     check (getParameter (*processor, "lfoRetrigger") == 0.0f, "LFO Retrigger defaults to off (the LFO runs freely)");
+
+    // Spelled out on purpose, like the IDs above.
+    auto* syncRate = findParameter (*processor, "lfoSyncRate");
+    check (findParameter (*processor, "lfoSync") != nullptr && syncRate != nullptr, "parameter IDs 'lfoSync' and 'lfoSyncRate' exist");
+
+    if (syncRate == nullptr)
+        return;
+
+    const juce::StringArray expectedLengths { "4/1", "2/1", "1/1", "1/2.", "1/2", "1/2T", "1/4.", "1/4",
+                                              "1/4T", "1/8.", "1/8", "1/8T", "1/16.", "1/16", "1/16T", "1/32" };
+    bool lengthsInOrder = std::abs (syncRate->convertFrom0to1 (1.0f) - (float) (expectedLengths.size() - 1)) < 0.01f;
+
+    for (int i = 0; i < expectedLengths.size(); ++i)
+        lengthsInOrder = lengthsInOrder && syncRate->getText (syncRate->convertTo0to1 ((float) i), 20) == expectedLengths[i];
+
+    check (getParameter (*processor, "lfoSync") == 0.0f, "LFO Sync defaults to off (the rate is in Hz)");
+    check (getParameter (*processor, "lfoSyncRate") == 7.0f, "LFO Sync Rate defaults to 1/4");
+    check (lengthsInOrder, "the LFO sync rates are 4/1 down to 1/32, with dotted and triplet lengths, in that order");
 }
 
 void testStateRoundTrip()
@@ -397,6 +415,8 @@ void testStateRoundTrip()
     setParameter (*original, "lfoShape", 3.0f);
     setParameter (*original, "modWheelLfoDepth", 40.0f);
     setParameter (*original, "lfoRetrigger", 1.0f);
+    setParameter (*original, "lfoSync", 1.0f);
+    setParameter (*original, "lfoSyncRate", 11.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -438,6 +458,8 @@ void testStateRoundTrip()
     check (getParameter (*restored, "lfoShape") == 3.0f, "the LFO shape (Square) survives saving and reloading");
     check (std::abs (getParameter (*restored, "modWheelLfoDepth") - 40.0f) < 0.01f, "Mod Wheel LFO Depth survives saving and reloading");
     check (getParameter (*restored, "lfoRetrigger") == 1.0f, "LFO Retrigger survives saving and reloading");
+    check (getParameter (*restored, "lfoSync") == 1.0f && getParameter (*restored, "lfoSyncRate") == 11.0f,
+           "LFO Sync and its rate (1/8T) survive saving and reloading");
 
     const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
     check (xml != nullptr && xml->getIntAttribute ("stateVersion") == 1, "saved state has version 1");
@@ -505,6 +527,8 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoShape", 2.0f);
     setParameter (*original, "modWheelLfoDepth", 60.0f);
     setParameter (*original, "lfoRetrigger", 1.0f);
+    setParameter (*original, "lfoSync", 1.0f);
+    setParameter (*original, "lfoSyncRate", 3.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -550,6 +574,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
     check (getParameter (*loaded, "modWheelLfoDepth") == 0.0f, "an older project loads with the mod wheel ignored, as it was");
     check (getParameter (*loaded, "lfoRetrigger") == 0.0f, "an older project loads with the LFO running freely, as it did");
+    check (getParameter (*loaded, "lfoSync") == 0.0f, "an older project loads with the LFO's rate in Hz, as it was");
 }
 
 void testOldAndInvalidState()

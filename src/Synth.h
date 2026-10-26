@@ -1,12 +1,14 @@
 #pragma once
 
 #include "Lfo.h"
+#include "Parameters.h"
 #include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <array>
 #include <atomic>
+#include <optional>
 
 namespace boringsynth
 {
@@ -56,6 +58,17 @@ struct LfoParameters
     const std::atomic<float>& shape;         // position in waveformNames
     const std::atomic<float>& modWheelDepth; // 0 to 100 %, added to depth with the wheel fully up
     const std::atomic<float>& retrigger;     // 0 (free-running) or 1 (restarted by every note)
+    const std::atomic<float>& sync;          // 0 (rate in Hz) or 1 (rate as a note length at the tempo)
+    const std::atomic<float>& syncRate;      // position in lfoSyncRateNames
+};
+
+// What the host says about its transport at the start of a block. Hosts may leave out the tempo or
+// the song position.
+struct Transport
+{
+    std::optional<double> tempoBpm;
+    std::optional<double> songPositionQuarterNotes; // the song position at the block's first sample
+    bool isPlaying = false;
 };
 
 // JUCE's Synthesiser, plus the LFO that every voice shares, and the mod wheel that adds to its depth.
@@ -77,8 +90,13 @@ public:
     void handleController (int midiChannel, int controllerNumber, int controllerValue) override;
     void handleSostenutoPedal (int, bool) override {}
 
+    // Called at the start of every block, before it's rendered, with what the host says about its
+    // transport: a synced LFO follows its tempo and, while it plays, its song position.
+    void setTransport (const Transport& transport);
+
     // How long the saw's and square's jumps take, as ramps, in seconds: as long as the shortest
-    // release, so they don't click.
+    // release, so they don't click. Also how long the LFO takes to fade when it jumps elsewhere in its
+    // cycle (when a note retriggers it, or the song it's locked to jumps).
     static constexpr double lfoJumpSeconds = 0.005;
 
 protected:
@@ -97,6 +115,9 @@ private:
     // last. Only touched on the audio thread, where MIDI is handled.
     float modWheel = 0.0f;
 
+    // The host's tempo, or the last one it gave, or defaultTempoBpm if it never has.
+    double tempoBpm = defaultTempoBpm;
+
     // How much of the LFO each destination gets (indexed by position in lfoDestinationNames): 1 for
     // the chosen one and 0 for the others, except while crossfading after the destination changes.
     std::array<juce::SmoothedValue<float>, 3> destinationAmounts;
@@ -104,6 +125,9 @@ private:
     Modulation modulation;
 
     float getLfoDepthTarget() const;
+    double getLfoRateHz() const;
+    double getSyncedCycleQuarterNotes() const;
+    bool isSynced() const;
     int getCurrentShape() const;
     int getCurrentDestination() const;
 };

@@ -244,6 +244,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     // Off by default: the LFO runs freely, as it did before this existed.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { lfoRetriggerId, 1 }, "LFO Retrigger", false));
 
+    // Off by default: the rate is LFO Rate, in Hz, as it was before this existed. On, the rate is LFO
+    // Sync Rate, a note length at the host's tempo, and LFO Rate is ignored. The lengths are saved by
+    // position, so lfoSyncRateNames' order is permanent.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { lfoSyncId, 1 }, "LFO Sync", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { lfoSyncRateId, 1 },
+                                                              "LFO Sync Rate",
+                                                              lfoSyncRateNames,
+                                                              defaultLfoSyncRate));
+
     return layout;
 }
 
