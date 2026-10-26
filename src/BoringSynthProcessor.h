@@ -9,13 +9,13 @@
 // A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
-// is JUCE's generic one, a row for each parameter. The pitch wheel bends notes, the mod wheel can add
-// to the LFO's depth, and the sustain pedal holds notes. The parameters are the output volume, velocity sensitivity, pitch bend range,
-// waveform, the amp envelope's attack, decay, sustain and release, the filter's on/off switch, type,
-// cutoff, resonance, key tracking, velocity amount, and its own envelope's attack, decay, sustain,
-// release and amount, the LFO's rate, depth, destination and shape, how much the mod wheel adds to
-// the LFO's depth, whether each note restarts the LFO, and whether its rate is synced to the host's
-// tempo, as a note length.
+// (BoringSynthEditor) lays out a control for every parameter. The pitch wheel bends notes, the mod
+// wheel can add to the LFO's depth, and the sustain pedal holds notes. The parameters are the output
+// volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
+// sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
+// amount, and its own envelope's attack, decay, sustain, release and amount, the LFO's rate, depth,
+// destination and shape, how much the mod wheel adds to the LFO's depth, whether each note restarts
+// the LFO, and whether its rate is synced to the host's tempo, as a note length.
 
 namespace boringsynth
 {

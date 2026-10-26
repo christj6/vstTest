@@ -11,6 +11,8 @@ set(BORINGSYNTH_PRODUCT_NAME "BoringSynth")
 set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BandLimitedWaveTable.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BandLimitedWaveTable.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthEditor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthEditor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Envelope.h

@@ -1,5 +1,6 @@
 #include "BoringSynthProcessor.h"
 
+#include "BoringSynthEditor.h"
 #include "SynthVoice.h"
 
 namespace boringsynth
@@ -96,11 +97,9 @@ void BoringSynthProcessor::prepareToPlay (double sampleRate, int)
     volumeGain.setCurrentAndTargetValue (getVolumeGain());
 }
 
-// JUCE's generic editor: a row for each parameter, with the names, ranges and display text the
-// parameters already have, connected to them both ways.
 juce::AudioProcessorEditor* BoringSynthProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new BoringSynthEditor (*this, parameters);
 }
 
 bool BoringSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const

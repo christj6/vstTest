@@ -182,4 +182,7 @@ int compareReference (const char* path);
 // The CPU benchmark (Benchmark.cpp). Returns the program's exit code.
 int runBenchmark();
 
+// Draws the plug-in's window to a PNG file (EditorTests.cpp). Returns the program's exit code.
+int saveEditorSnapshot (const char* path);
+
 } // namespace testing

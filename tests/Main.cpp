@@ -2,7 +2,8 @@
 
 // With no arguments, runs every test. With --record <file> or --compare <file>, records or
 // compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
-// plug-in's speed instead (see Benchmark.cpp).
+// plug-in's speed instead (see Benchmark.cpp). With --snapshot <file>, draws the plug-in's window
+// to a PNG file, to look at without a DAW (see EditorTests.cpp).
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -16,9 +17,12 @@ int main (int argc, char** argv)
     if (argc == 2 && juce::String (argv[1]) == "--benchmark")
         return testing::runBenchmark();
 
+    if (argc == 3 && juce::String (argv[1]) == "--snapshot")
+        return testing::saveEditorSnapshot (argv[2]);
+
     if (argc != 1)
     {
-        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark]\n");
+        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark | --snapshot <file>]\n");
         return 1;
     }
 
