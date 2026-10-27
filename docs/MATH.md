@@ -277,7 +277,7 @@ If it drifts more than $10^{-4}$ of a cycle from there (only a loop, a jump or s
 
 ## 10. Smoothing and crossfades
 
-*Throughout*
+*`SynthVoice.cpp`, `Synth.cpp`, `Oscillator.h`, `Lfo.h`, `BoringSynthProcessor.cpp`*
 
 Anything that would jump, and so click, glides or crossfades instead, almost always in a straight line over a fixed time:
 
