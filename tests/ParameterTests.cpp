@@ -577,6 +577,29 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "lfoSync") == 0.0f, "an older project loads with the LFO's rate in Hz, as it was");
 }
 
+void testSwitchesRestoredExactly()
+{
+    // A host (pluginval, here) can set an on/off parameter to an in-between value, such as 0.22,
+    // which counts as off. Restoring a state with it off must then report exactly 0, not leave 0.22
+    // because it already counted as off. And likewise 0.78 must come back as exactly 1.
+    auto saved = createProcessor();
+    setParameter (*saved, "lfoSync", 1.0f);
+    juce::MemoryBlock state;
+    saved->getStateInformation (state);
+
+    auto restored = createProcessor();
+    findParameter (*restored, "filterEnabled")->setValueNotifyingHost (0.22f);
+    findParameter (*restored, "lfoRetrigger")->setValueNotifyingHost (0.22f);
+    findParameter (*restored, "lfoSync")->setValueNotifyingHost (0.78f);
+    restored->setStateInformation (state.getData(), (int) state.getSize());
+
+    const auto filter = findParameter (*restored, "filterEnabled")->getValue();
+    const auto retrigger = findParameter (*restored, "lfoRetrigger")->getValue();
+    const auto sync = findParameter (*restored, "lfoSync")->getValue();
+    std::printf ("      after restoring: Filter %.2f, LFO Retrigger %.2f, LFO Sync %.2f (expected 0, 0, 1)\n", filter, retrigger, sync);
+    check (filter == 0.0f && retrigger == 0.0f && sync == 1.0f, "restoring a state sets on/off parameters to exactly on or off");
+}
+
 void testOldAndInvalidState()
 {
     // A project saved before the plug-in had parameters holds an empty state.
@@ -615,6 +638,7 @@ void runParameterTests()
     testStateRoundTrip();
     testEveryParameterRoundTrips();
     testStateFromOlderVersions();
+    testSwitchesRestoredExactly();
     testOldAndInvalidState();
 }
 

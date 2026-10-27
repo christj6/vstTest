@@ -171,6 +171,14 @@ void BoringSynthProcessor::setStateInformation (const void* data, int sizeInByte
     const auto state = juce::ValueTree::fromXml (*xml);
     parameters.replaceState (state);
     presets.readFrom (state);
+
+    // JUCE's on/off parameters keep whatever value a host last gave them: 0.22, say, which counts as
+    // off. Restoring a state with one off then leaves 0.22 alone, as it already counts as off, and
+    // the host reads back 0.22 rather than the 0 it saved. So set each one to exactly on or off.
+    for (auto* parameter : getParameters())
+        if (auto* toggle = dynamic_cast<juce::AudioParameterBool*> (parameter))
+            if (const auto exact = toggle->get() ? 1.0f : 0.0f; parameter->getValue() != exact)
+                parameter->setValueNotifyingHost (exact);
 }
 
 float BoringSynthProcessor::getVolumeGain() const
