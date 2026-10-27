@@ -60,7 +60,13 @@ const std::vector<FactoryPreset>& getFactoryPresets()
                               { ampReleaseId, 0.3f },
                               { filterEnabledId, 1.0f }, { filterCutoffId, 2500.0f },
                               { lfoDestinationId, (float) volumeDestination }, { lfoShapeId, (float) squareWaveform },
-                              { lfoDepthId, 100.0f }, { lfoSyncId, 1.0f }, { lfoSyncRateId, 13.0f }, { lfoRetriggerId, 1.0f } } } };
+                              { lfoDepthId, 100.0f }, { lfoSyncId, 1.0f }, { lfoSyncRateId, 13.0f }, { lfoRetriggerId, 1.0f } } },
+
+        // A pure sine for deep bass under other sounds: no harmonics to buzz, held while the key is
+        // down, fading over 120 ms when it's released. A little quieter when played softly.
+        { "Sub Bass", { { waveformId, (float) sineWaveform },
+                        { ampReleaseId, 0.12f },
+                        { velocitySensitivityId, 30.0f } } } };
 
     return presets;
 }

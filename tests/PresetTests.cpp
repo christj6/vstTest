@@ -350,6 +350,38 @@ void testFactoryPresetsAsPrograms()
     check (parametersAwayFromDefault (*synth).isEmpty(), "choosing another program loads it");
 }
 
+void testSubBass()
+{
+    // Sub Bass is a pure sine: played at full velocity, exactly what Init (a plain sine) plays while
+    // the key is held. Released, it fades over 120 ms rather than Init's 5 ms; played softly, it's a
+    // little quieter (30 % velocity sensitivity: velocity 64 is about 0.78 of full level).
+    int subBass = -1;
+
+    for (int i = 0; i < (int) boringsynth::getFactoryPresets().size(); ++i)
+        if (juce::String (boringsynth::getFactoryPresets()[(size_t) i].name) == "Sub Bass")
+            subBass = i;
+
+    check (subBass == (int) boringsynth::getFactoryPresets().size() - 1, "Sub Bass is the last factory preset, so the others keep their positions");
+
+    auto withPreset = [] (int index)
+    {
+        return [index] (juce::AudioProcessor& p) { dynamic_cast<BoringSynthProcessor&> (p).getPresetManager().loadFactoryPreset (index); };
+    };
+    constexpr int noteOffAt = 24000;
+    const std::vector<TimedMessage> fullVelocity { { 0, noteOn (33, 127) }, { noteOffAt, noteOff (33) } }; // A1, 55 Hz
+    const auto init = render ({ .events = fullVelocity, .setUp = withPreset (0) });
+    const auto sub = render ({ .events = fullVelocity, .setUp = withPreset (subBass) });
+    const auto soft = render ({ .events = { { 0, noteOn (33, 64) } }, .setUp = withPreset (subBass) });
+
+    const auto heldSame = std::equal (init.begin(), init.begin() + noteOffAt, sub.begin());
+    const auto fadeMs = 1000.0 * (lastNonZeroIndex (sub) - noteOffAt) / testSampleRate;
+    const auto softLevel = peakBetween (soft, 4800, 24000) / peakBetween (sub, 4800, 24000);
+    std::printf ("      Sub Bass: fades over %.1f ms after release; velocity 64 plays at %.3f of full level\n", fadeMs, softLevel);
+    check (heldSame, "Sub Bass plays a pure sine, exactly as Init does while the key is held");
+    check (std::abs (fadeMs - 120.0) < 1.0 && std::abs (softLevel - (0.7 + 0.3 * std::pow (64.0 / 127.0, 2.0))) < 0.01,
+           "Sub Bass fades over 120 ms when released, and is a little quieter played softly");
+}
+
 } // namespace
 
 void runPresetTests()
@@ -364,6 +396,7 @@ void runPresetTests()
     testUserPresetList();
     testPresetSavedWithTheProject();
     testFactoryPresetsAsPrograms();
+    testSubBass();
 }
 
 } // namespace testing

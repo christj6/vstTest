@@ -30,7 +30,7 @@ Each knob shows its value underneath; drag it up or down (or round), double-clic
 
 The preset menu at the top of the window lists the factory presets, then your own:
 
-- **Factory presets**, built into the plug-in: **Init** (every setting at its default, the plug-in's first sound), Soft Pad, Pluck Bass, Squelch, Tremolo Organ, Wobble Bass, Vibrato Lead (move the mod wheel) and Chopped Chords (in time with your song). Your DAW also lists them as the plug-in's programs.
+- **Factory presets**, built into the plug-in: **Init** (every setting at its default, the plug-in's first sound), Soft Pad, Pluck Bass, Squelch, Tremolo Organ, Wobble Bass, Vibrato Lead (move the mod wheel), Chopped Chords (in time with your song) and Sub Bass (a pure sine). Your DAW also lists them as the plug-in's programs.
 - **Your presets**: **Save...** asks for a name and saves the current settings, asking first before replacing one with the same name. They're saved in `Documents\BoringSynth\Presets` (the folder is made when you first save one), one file per preset, named after it. To rename or delete one, rename or delete its file; the menu re-reads the folder each time it opens.
 
 A preset file is the same as the settings the plug-in saves in your project: readable XML listing each parameter's value. A preset saved before a parameter existed loads with that parameter at its default. Your project also remembers which preset it was on. Your DAW's own preset system (FL Studio's `.fst` files, or `.vstpreset` in other hosts) works as well, since it saves the same settings.

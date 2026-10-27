@@ -35,7 +35,7 @@ DAW projects store these. Changing any of them breaks every project that uses th
 | LFO sync rate choices, in order | `4/1`, `2/1`, `1/1`, `1/2.`, `1/2`, `1/2T`, `1/4.`, `1/4`, `1/4T`, `1/8.`, `1/8`, `1/8T`, `1/16.`, `1/16`, `1/16T`, `1/32`. Saved by position, so new lengths may only be **added at the end**. |
 | Saved state | XML with tag `Parameters` and attribute `stateVersion="1"`, plus `presetName` and `factoryPreset` (the current preset; added in step 26, so no version bump) |
 | Preset files | The same XML as the saved state, one `<name>.xml` file per preset, in `Documents/BoringSynth/Presets` |
-| Factory presets, in order | `Init`, `Soft Pad`, `Pluck Bass`, `Squelch`, `Tremolo Organ`, `Wobble Bass`, `Vibrato Lead`, `Chopped Chords`. Hosts save a project's program by its position, so new presets may only be **added at the end**. |
+| Factory presets, in order | `Init`, `Soft Pad`, `Pluck Bass`, `Squelch`, `Tremolo Organ`, `Wobble Bass`, `Vibrato Lead`, `Chopped Chords`, `Sub Bass`. Hosts save a project's program by its position, so new presets may only be **added at the end**. |
 
 **Changing the saved state:**
 - **Adding a parameter** needs no version bump. Older projects simply don't have it, and it loads at its default. The default should reproduce how the plug-in sounded before the parameter existed.
