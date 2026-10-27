@@ -15,14 +15,11 @@ The plan for growing BoringSynth, one small step at a time, from a plain sine sy
 | 4. Amp envelope | 12. ADSR amp envelope, our own `Envelope` class, with defaults that reproduce the old 5 ms fade · 13. Stolen voices fade their old note out over 5 ms instead of clicking |
 | 5. Filter | 14. Per-voice resonant low-pass filter (our own `Filter` class): an on/off switch (off by default), Cutoff and Resonance · 15. Filter type: low-pass, high-pass, band-pass, crossfading when changed · 16. Key tracking, 0–100 % around middle C · 17. A filter envelope per note, its amount in octaves · 18. Velocity → filter: softer notes darker, by up to 8 octaves |
 | 6. LFO | 19. One shared, free-running LFO on pitch (vibrato): Rate and Depth, worked out once per sample for every voice · 20. LFO destination: pitch, volume (tremolo) or filter cutoff, crossfading when changed · 21a. The LFO's own shapes, each exactly within ±1 · 21b. LFO Shape: sine, triangle, saw or square, crossfading when changed, with the saw's and square's jumps as 5 ms ramps (band-limited tables were tried first and rejected; see DESIGN.md) · 22. Mod wheel → LFO depth, its amount 0–100 % on top of the knob · 23a. LFO Retrigger: every note restarts the LFO, fading over 5 ms · 23b. LFO Sync: the rate as a note length at the host's tempo, its position following the song's while it plays |
-| 7. GUI and presets (in progress) | 24. JUCE's generic editor: a row for each parameter · 25. A plain laid-out editor: JUCE's standard controls in six labelled groups, connected through parameter attachments · 26. Presets: Init and seven more built in (also the host's programs; Sub Bass added since), and your own saved as XML files, from a menu in the window |
+| 7. GUI and presets | 24. JUCE's generic editor: a row for each parameter · 25. A plain laid-out editor: JUCE's standard controls in six labelled groups, connected through parameter attachments · 26. Presets: Init and seven more built in (also the host's programs; Sub Bass added since), and your own saved as XML files, from a menu in the window · 27. Polish: the window resizes from 75 % to 200 % by scaling, its size saved with the project; the rows of groups line up; high-DPI checked (JUCE already draws it sharp). Envelope and filter displays were left out (see DESIGN.md) |
 
 Along the way, the test tools also gained a reference render (`--record` / `--compare`), named render options, shared measuring helpers, a CPU benchmark (`--benchmark`), a stand-in for a host's play head (tempo, song position, playing or not), a picture of the window (`--snapshot`), and a way to play a MIDI file through the plug-in to a WAV file (`--render`).
 
 ## Next
-
-**Phase 7: GUI and presets.** Milestone: a complete single-oscillator synth.
-- 27. Polish: look, resizing, high-DPI, envelope and filter displays.
 
 **Phase 8: Full wavetables.** Milestone: a wavetable synth.
 - 28. Multi-frame tables and a Position control.
@@ -37,4 +34,4 @@ Along the way, the test tools also gained a reference render (`--record` / `--co
 
 ## Not planned yet
 
-These could each be a phase after Phase 7: a second oscillator, unison, glide and mono mode, built-in effects (chorus, delay, reverb), a Polyphony parameter, the CLAP format, and running pluginval from CTest.
+These could each be a phase of their own: a second oscillator, unison, glide and mono mode, built-in effects (chorus, delay, reverb), envelope and filter displays, a Polyphony parameter, the CLAP format, and running pluginval from CTest.

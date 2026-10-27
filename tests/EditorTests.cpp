@@ -2,6 +2,8 @@
 
 #include "BoringSynthProcessor.h"
 
+#include <map>
+
 // Editor tests: the plug-in's window opens, closes and opens again, and makes no difference to the
 // sound; every parameter has a control of the right kind, connected both ways; and the controls fit.
 
@@ -209,8 +211,11 @@ void testSyncGreysOutTheRateNotInUse()
 
 void testControlsFitAndDontOverlap()
 {
+    // At the normal size, the smallest and the largest. Bounds in the window, as drawn, scaled.
     OpenEditor open;
-    std::vector<juce::Component*> controls;
+    const auto normalWidth = open.editor->getWidth();
+    const auto normalHeight = open.editor->getHeight();
+    std::vector<juce::Component*> controls { open.control ("presetMenu"), open.control ("savePreset") };
 
     for (auto* parameter : open.processor->getParameters())
         if (auto* control = open.control (dynamic_cast<juce::RangedAudioParameter*> (parameter)->getParameterID()))
@@ -218,16 +223,141 @@ void testControlsFitAndDontOverlap()
 
     bool allInside = true, noneOverlap = true;
 
-    for (size_t i = 0; i < controls.size(); ++i)
+    for (const auto scale : { 1.0f, 0.75f, 2.0f })
     {
-        allInside = allInside && open.editor->getLocalBounds().contains (controls[i]->getBounds()) && ! controls[i]->getBounds().isEmpty();
+        open.editor->setSize (juce::roundToInt ((float) normalWidth * scale), juce::roundToInt ((float) normalHeight * scale));
 
-        for (size_t j = i + 1; j < controls.size(); ++j)
-            noneOverlap = noneOverlap && ! controls[i]->getBounds().intersects (controls[j]->getBounds());
+        for (size_t i = 0; i < controls.size(); ++i)
+        {
+            const auto bounds = controls[i] != nullptr ? controls[i]->getBoundsInParent() : juce::Rectangle<int>();
+            allInside = allInside && open.editor->getLocalBounds().contains (bounds) && ! bounds.isEmpty();
+
+            for (size_t j = i + 1; j < controls.size(); ++j)
+                noneOverlap = noneOverlap && controls[j] != nullptr && ! bounds.intersects (controls[j]->getBoundsInParent());
+        }
     }
 
-    std::printf ("      editor: %d x %d\n", open.editor->getWidth(), open.editor->getHeight());
-    check (allInside && noneOverlap, "every control fits in the window, and none overlap");
+    std::printf ("      editor: %d x %d\n", normalWidth, normalHeight);
+    check (allInside && noneOverlap, "every control fits in the window, and none overlap, at 75 %, 100 % and 200 %");
+}
+
+void testRowsLineUp()
+{
+    // Every row of groups ends at the same place, a gap in from the window's right edge.
+    OpenEditor open;
+    std::map<int, int> rowEnds; // each row's top, and where its last group ends
+
+    for (auto* child : open.editor->getChildren())
+        if (auto* group = dynamic_cast<juce::GroupComponent*> (child))
+            rowEnds[group->getY()] = std::max (rowEnds[group->getY()], group->getRight());
+
+    juce::String ends;
+    bool lineUp = rowEnds.size() == 3;
+
+    for (const auto& [top, end] : rowEnds)
+    {
+        ends << end << " ";
+        lineUp = lineUp && end == rowEnds.begin()->second;
+    }
+
+    std::printf ("      rows end at: %s(window %d wide)\n", ends.toRawUTF8(), open.editor->getWidth());
+    check (lineUp && rowEnds.begin()->second == open.editor->getWidth() - 10, "every row of groups ends at the same place");
+}
+
+void testWindowScales()
+{
+    // Dragged past its limits, the window stops at 75 % and 200 %, keeping its shape, and everything
+    // in it is drawn that much bigger or smaller.
+    OpenEditor open;
+    const auto normal = open.editor->getLocalBounds();
+    const auto knobAtNormal = open.control ("filterCutoff")->getBoundsInParent();
+    auto* constrainer = open.editor->getConstrainer();
+
+    auto dragTo = [&] (int width, int height)
+    {
+        constrainer->setBoundsForComponent (open.editor, { width, height }, false, false, true, true);
+        return open.editor->getLocalBounds();
+    };
+
+    const auto largest = dragTo (normal.getWidth() * 5, normal.getHeight() * 5);
+    const auto knobAtLargest = open.control ("filterCutoff")->getBoundsInParent();
+    const auto smallest = dragTo (normal.getWidth() / 5, normal.getHeight() / 5);
+    const auto wider = dragTo (normal.getWidth() * 3 / 2, normal.getHeight());
+
+    auto near = [] (int value, double expected) { return std::abs (value - expected) <= 1.0; };
+    std::printf ("      normal %d x %d, largest %d x %d, smallest %d x %d, dragged wider %d x %d; Cutoff knob %d -> %d wide\n",
+                 normal.getWidth(), normal.getHeight(), largest.getWidth(), largest.getHeight(), smallest.getWidth(), smallest.getHeight(),
+                 wider.getWidth(), wider.getHeight(), knobAtNormal.getWidth(), knobAtLargest.getWidth());
+    check (near (largest.getWidth(), normal.getWidth() * 2.0) && near (largest.getHeight(), normal.getHeight() * 2.0)
+               && near (smallest.getWidth(), normal.getWidth() * 0.75) && near (smallest.getHeight(), normal.getHeight() * 0.75),
+           "the window can be resized from 75 % to 200 %");
+    check (near (wider.getHeight(), wider.getWidth() * (double) normal.getHeight() / normal.getWidth()),
+           "the window keeps its shape when resized");
+    check (knobAtLargest.getX() == knobAtNormal.getX() * 2 && knobAtLargest.getWidth() == knobAtNormal.getWidth() * 2,
+           "at 200 %, everything is drawn twice as big, in the same place");
+}
+
+void testWindowSizeRemembered()
+{
+    // The window reopens at the size it was, and the project remembers it, but presets don't.
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getChildFile ("BoringSynthEditorTests-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    auto processor = std::unique_ptr<boringsynth::BoringSynthProcessor> (dynamic_cast<boringsynth::BoringSynthProcessor*> (createPluginFilter()));
+    processor->getPresetManager().setUserPresetFolder (folder);
+
+    auto* editor = processor->createEditorAndMakeActive();
+    const auto normal = editor->getLocalBounds();
+    const juce::Rectangle<int> enlarged (normal.getWidth() * 3 / 2, normal.getHeight() * 3 / 2);
+    editor->setSize (enlarged.getWidth(), enlarged.getHeight());
+    closeEditor (*processor);
+
+    auto openedSize = [] (juce::AudioProcessor& p)
+    {
+        const auto size = p.createEditorAndMakeActive()->getLocalBounds();
+        closeEditor (p);
+        return size;
+    };
+
+    const auto reopened = openedSize (*processor);
+
+    juce::MemoryBlock project;
+    processor->getStateInformation (project);
+    std::unique_ptr<juce::AudioProcessor> reloaded (createPluginFilter());
+    reloaded->setStateInformation (project.getData(), (int) project.getSize());
+    const auto fromProject = openedSize (*reloaded);
+
+    // A project from before the window could be resized has no size: it opens at the normal size.
+    auto xml = juce::AudioProcessor::getXmlFromBinary (project.getData(), (int) project.getSize());
+    xml->removeAttribute ("editorScale");
+    juce::MemoryBlock oldProject;
+    juce::AudioProcessor::copyXmlToBinary (*xml, oldProject);
+    reloaded->setStateInformation (oldProject.getData(), (int) oldProject.getSize());
+    const auto fromOldProject = openedSize (*reloaded);
+
+    // A size outside the limits (a damaged project, say) is brought within them.
+    xml->setAttribute ("editorScale", 50.0);
+    juce::MemoryBlock badProject;
+    juce::AudioProcessor::copyXmlToBinary (*xml, badProject);
+    reloaded->setStateInformation (badProject.getData(), (int) badProject.getSize());
+    const auto fromBadProject = openedSize (*reloaded);
+
+    auto& presets = processor->getPresetManager();
+    presets.saveUserPreset ("Sized");
+    const auto presetXml = juce::XmlDocument::parse (folder.getChildFile ("Sized.xml"));
+    presets.loadFactoryPreset (2);
+    const auto afterPreset = openedSize (*processor);
+
+    std::printf ("      enlarged to %d x %d; reopened %d x %d, from the project %d x %d, an old project %d x %d, a damaged one %d x %d\n",
+                 enlarged.getWidth(), enlarged.getHeight(), reopened.getWidth(), reopened.getHeight(), fromProject.getWidth(), fromProject.getHeight(),
+                 fromOldProject.getWidth(), fromOldProject.getHeight(), fromBadProject.getWidth(), fromBadProject.getHeight());
+    check (reopened == enlarged, "the window reopens at the size it was");
+    check (fromProject == enlarged, "a project reopens its window at the size it was saved with");
+    check (fromOldProject == normal, "a project from before resizing opens the window at its normal size");
+    check (fromBadProject == normal * 2, "a size outside the limits is brought within them");
+    check (presetXml != nullptr && ! presetXml->hasAttribute ("editorScale") && afterPreset == enlarged,
+           "presets don't save or change the window's size");
+
+    folder.deleteRecursively();
 }
 
 void testPresetMenu()
@@ -295,10 +425,13 @@ void runEditorTests()
     testKnobsShowTheParametersText();
     testSyncGreysOutTheRateNotInUse();
     testControlsFitAndDontOverlap();
+    testRowsLineUp();
+    testWindowScales();
+    testWindowSizeRemembered();
     testPresetMenu();
 }
 
-int saveEditorSnapshot (const char* path)
+int saveEditorSnapshot (const char* path, float displayScale)
 {
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
     auto* editor = processor->createEditorAndMakeActive();
@@ -309,7 +442,8 @@ int saveEditorSnapshot (const char* path)
         return 1;
     }
 
-    const auto image = editor->createComponentSnapshot (editor->getLocalBounds());
+    // Drawn as a display with that many pixels per point would show it (2 for a 200 % Windows display).
+    const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, displayScale);
     closeEditor (*processor);
 
     const auto file = juce::File::getCurrentWorkingDirectory().getChildFile (path);

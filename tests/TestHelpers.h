@@ -184,8 +184,9 @@ int compareReference (const char* path);
 // The CPU benchmark (Benchmark.cpp). Returns the program's exit code.
 int runBenchmark();
 
-// Draws the plug-in's window to a PNG file (EditorTests.cpp). Returns the program's exit code.
-int saveEditorSnapshot (const char* path);
+// Draws the plug-in's window to a PNG file (EditorTests.cpp), at displayScale pixels per point (2 to see
+// it as a 200 % Windows display shows it). Returns the program's exit code.
+int saveEditorSnapshot (const char* path, float displayScale);
 
 // Plays a MIDI file through the plug-in with a factory preset, changed by any "parameterId=value"
 // overrides, to a WAV file (RenderTool.cpp). Returns the program's exit code.

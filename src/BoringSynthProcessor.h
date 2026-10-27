@@ -97,6 +97,10 @@ private:
                     .sync = *lfoSync,
                     .syncRate = *lfoSyncRate } };
 
+    // How big the editor's window is drawn (1 is its normal size), kept here so the window reopens at
+    // the same size and the project remembers it. Not a parameter, and not saved in presets.
+    std::atomic<float> editorScale { 1.0f };
+
     // Smoothed linearly in gain rather than in dB, because the minimum volume is a gain of
     // exactly 0, which multiplicative (dB-style) smoothing can never reach.
     juce::SmoothedValue<float> volumeGain;

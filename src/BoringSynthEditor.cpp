@@ -60,10 +60,12 @@ constexpr int noUserPresetsItemId = 1000;
 
 } // namespace
 
-BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state, PresetManager& presetManager)
+BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state,
+                                      PresetManager& presetManager, std::atomic<float>& windowScale)
     : AudioProcessorEditor (processor),
       parameters (state),
-      presets (presetManager)
+      presets (presetManager),
+      scale (windowScale)
 {
     presetLabel.setText ("Preset", juce::dontSendNotification);
     addAndMakeVisible (presetLabel);
@@ -81,9 +83,6 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
     refreshPresetMenu();
     presets.addChangeListener (this);
 
-    int width = 0;
-    std::array<int, numRows> rowWidths {};
-
     for (const auto& layout : getLayout())
     {
         Group group { std::make_unique<juce::GroupComponent> (juce::String(), layout.title), {}, layout.row };
@@ -92,12 +91,14 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
         for (const auto& [parameterId, labelText] : layout.controls)
             group.controls.push_back (&addControl (parameterId, labelText));
 
-        rowWidths[(size_t) layout.row] += getGroupWidth (group) + gap;
         groups.push_back (std::move (group));
     }
 
-    for (auto rowWidth : rowWidths)
-        width = std::max (width, rowWidth);
+    for (int row = 0; row < numRows; ++row)
+        normalWidth = std::max (normalWidth, getRowWidth (row));
+
+    normalWidth += gap;
+    normalHeight = gap + presetBarHeight + gap + numRows * (groupHeight + gap);
 
     if (auto* sync = parameters.getParameter (lfoSyncId))
     {
@@ -105,7 +106,14 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
         syncAttachment->sendInitialUpdate();
     }
 
-    setSize (width + gap, gap + presetBarHeight + gap + numRows * (groupHeight + gap));
+    // Read before setting the limits, which resize the still-empty window to the smallest size.
+    const auto openingScale = scale.load();
+
+    setResizable (true, true);
+    setResizeLimits (juce::roundToInt ((float) normalWidth * minScale), juce::roundToInt ((float) normalHeight * minScale),
+                     juce::roundToInt ((float) normalWidth * maxScale), juce::roundToInt ((float) normalHeight * maxScale));
+    getConstrainer()->setFixedAspectRatio ((double) normalWidth / (double) normalHeight);
+    setSize (juce::roundToInt ((float) normalWidth * openingScale), juce::roundToInt ((float) normalHeight * openingScale));
 }
 
 BoringSynthEditor::~BoringSynthEditor()
@@ -275,45 +283,63 @@ void BoringSynthEditor::paint (juce::Graphics& g)
 
 void BoringSynthEditor::resized()
 {
-    auto presetBar = juce::Rectangle<int> (gap, gap, getWidth() - 2 * gap, presetBarHeight);
-    presetLabel.setBounds (presetBar.removeFromLeft (presetLabelWidth));
-    presetMenu.setBounds (presetBar.removeFromLeft (presetMenuWidth));
-    presetBar.removeFromLeft (gap);
-    saveButton.setBounds (presetBar.removeFromLeft (saveButtonWidth));
+    // Everything is laid out at the normal size, then drawn scaled up or down to fill the window.
+    const auto windowScale = (float) getWidth() / (float) normalWidth;
+    const auto transform = juce::AffineTransform::scale (windowScale);
+    scale = windowScale;
 
+    auto place = [&transform] (juce::Component& component, juce::Rectangle<int> bounds)
+    {
+        component.setTransform (transform);
+        component.setBounds (bounds);
+    };
+
+    auto presetBar = juce::Rectangle<int> (gap, gap, normalWidth - 2 * gap, presetBarHeight);
+    place (presetLabel, presetBar.removeFromLeft (presetLabelWidth));
+    place (presetMenu, presetBar.removeFromLeft (presetMenuWidth));
+    presetBar.removeFromLeft (gap);
+    place (saveButton, presetBar.removeFromLeft (saveButtonWidth));
+
+    // Rows narrower than the widest share out the spare width among their cells, so every row ends at
+    // the same place. Each control keeps its own width, centred in its cell.
     std::array<int, numRows> rowX;
+    std::array<int, numRows> cellsPlaced {};
     rowX.fill (gap);
 
     for (auto& group : groups)
     {
-        const auto x = rowX[(size_t) group.row];
+        const auto row = (size_t) group.row;
+        const auto x = rowX[row];
         const auto y = gap + presetBarHeight + gap + group.row * (groupHeight + gap);
-        const auto width = getGroupWidth (group);
-        group.box->setBounds (x, y, width, groupHeight);
-        rowX[(size_t) group.row] += width + gap;
-
+        const auto spareWidth = normalWidth - gap - getRowWidth (group.row);
+        const auto numCells = getNumCellsInRow (group.row);
         auto cellX = x + groupPadding;
 
         for (auto* control : group.controls)
         {
-            const auto cell = juce::Rectangle<int> (cellX, y + groupTitleHeight, getCellWidth (*control), cellHeight);
+            const auto extraWidth = spareWidth / numCells + (cellsPlaced[row]++ < spareWidth % numCells ? 1 : 0);
+            const auto cell = juce::Rectangle<int> (cellX, y + groupTitleHeight, getCellWidth (*control) + extraWidth, cellHeight);
             cellX += cell.getWidth();
-            auto area = cell.reduced (2, 0);
+            auto area = cell.withSizeKeepingCentre (getCellWidth (*control), cellHeight).reduced (2, 0);
 
             if (control->buttonAttachment != nullptr)
             {
-                control->component->setBounds (area.withSizeKeepingCentre (area.getWidth(), menuHeight));
+                place (*control->component, area.withSizeKeepingCentre (area.getWidth(), menuHeight));
             }
             else
             {
-                control->label.setBounds (area.removeFromTop (labelHeight));
+                place (control->label, area.removeFromTop (labelHeight));
 
                 if (control->comboBoxAttachment != nullptr)
-                    control->component->setBounds (area.withSizeKeepingCentre (area.getWidth(), menuHeight));
+                    place (*control->component, area.withSizeKeepingCentre (area.getWidth(), menuHeight));
                 else
-                    control->component->setBounds (area);
+                    place (*control->component, area);
             }
         }
+
+        const auto width = cellX + groupPadding - x;
+        place (*group.box, { x, y, width, groupHeight });
+        rowX[row] += width + gap;
     }
 }
 
@@ -330,6 +356,29 @@ int BoringSynthEditor::getGroupWidth (const Group& group)
         width += getCellWidth (*control);
 
     return width;
+}
+
+// A row's width at its natural size: its groups, each followed by a gap.
+int BoringSynthEditor::getRowWidth (int row) const
+{
+    int width = 0;
+
+    for (const auto& group : groups)
+        if (group.row == row)
+            width += getGroupWidth (group) + gap;
+
+    return width;
+}
+
+int BoringSynthEditor::getNumCellsInRow (int row) const
+{
+    int numCells = 0;
+
+    for (const auto& group : groups)
+        if (group.row == row)
+            numCells += (int) group.controls.size();
+
+    return numCells;
 }
 
 } // namespace boringsynth

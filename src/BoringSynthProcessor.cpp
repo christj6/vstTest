@@ -15,6 +15,9 @@ constexpr int numVoices = 16;
 // moves crackle ("zipper noise").
 constexpr double volumeSmoothingSeconds = 0.02;
 
+// The saved state's property for the editor window's size.
+constexpr const char* editorScaleId = "editorScale";
+
 // Last line of defence before audio leaves the plug-in. NaN or infinity would poison every
 // effect after us, so it becomes silence; anything past full scale is clipped to it.
 void protectOutput (juce::AudioBuffer<float>& buffer)
@@ -99,7 +102,7 @@ void BoringSynthProcessor::prepareToPlay (double sampleRate, int)
 
 juce::AudioProcessorEditor* BoringSynthProcessor::createEditor()
 {
-    return new BoringSynthEditor (*this, parameters, presets);
+    return new BoringSynthEditor (*this, parameters, presets, editorScale);
 }
 
 bool BoringSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -154,6 +157,7 @@ void BoringSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto state = parameters.copyState();
     state.setProperty (stateVersionId, currentStateVersion, nullptr);
     presets.writeTo (state);
+    state.setProperty (editorScaleId, editorScale.load(), nullptr);
 
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -171,6 +175,11 @@ void BoringSynthProcessor::setStateInformation (const void* data, int sizeInByte
     const auto state = juce::ValueTree::fromXml (*xml);
     parameters.replaceState (state);
     presets.readFrom (state);
+
+    // Projects saved before the window could be resized open it at its normal size. An open window
+    // keeps its size; the next one opens at this.
+    editorScale = juce::jlimit (BoringSynthEditor::minScale, BoringSynthEditor::maxScale,
+                                (float) state.getProperty (editorScaleId, 1.0f));
 
     // JUCE's on/off parameters keep whatever value a host last gave them: 0.22, say, which counts as
     // off. Restoring a state with one off then leaves 0.22 alone, as it already counts as off, and

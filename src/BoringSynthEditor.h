@@ -4,6 +4,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -15,7 +16,10 @@ namespace boringsynth
 // Oscillator, Amp Envelope, Filter, Filter Envelope, LFO). Knobs for numbers, showing the parameter's
 // own value text; menus for choices; tick boxes for switches. Each control is connected to its
 // parameter by a JUCE parameter attachment, which keeps the two in step both ways, including when
-// the host automates the parameter. A fixed size and JUCE's own look: it's BoringSynth.
+// the host automates the parameter. JUCE's own look: it's BoringSynth.
+//
+// The window can be resized from its corner, keeping its shape: everything is drawn bigger or
+// smaller, from 75 % to 200 %, rather than laid out differently. The project remembers the size.
 //
 // Each control's component ID is its parameter's ID, so tests can find them; the preset menu's is
 // "presetMenu" and the Save button's "savePreset".
@@ -23,9 +27,14 @@ class BoringSynthEditor  : public juce::AudioProcessorEditor,
                            private juce::ChangeListener
 {
 public:
-    // parameters and presets belong to the processor; all three must outlive the editor, as JUCE
-    // ensures for a processor's editor.
-    BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& parameters, PresetManager& presets);
+    // How big the window can be drawn, as a share of its normal size.
+    static constexpr float minScale = 0.75f;
+    static constexpr float maxScale = 2.0f;
+
+    // parameters, presets and scale belong to the processor; all four must outlive the editor, as JUCE
+    // ensures for a processor's editor. The window opens at scale, and keeps it up to date when resized.
+    BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& parameters,
+                       PresetManager& presets, std::atomic<float>& scale);
     ~BoringSynthEditor() override;
 
     void paint (juce::Graphics& g) override;
@@ -69,6 +78,7 @@ private:
 
     juce::AudioProcessorValueTreeState& parameters;
     PresetManager& presets;
+    std::atomic<float>& scale;
     std::vector<std::unique_ptr<Control>> controls;
     std::vector<Group> groups;
 
@@ -77,6 +87,10 @@ private:
     juce::TextButton saveButton { "Save..." };
     juce::StringArray userPresetNames; // as the menu lists them
 
+    // The window's size at 100 %. Everything is laid out at this size, then drawn scaled to the window.
+    int normalWidth = 0;
+    int normalHeight = 0;
+
     // Greys out LFO Rate while LFO Sync is on, and LFO Sync Rate while it's off: only one of them
     // sets the LFO's speed at a time.
     std::unique_ptr<juce::ParameterAttachment> syncAttachment;
@@ -84,6 +98,8 @@ private:
     Control& addControl (const char* parameterId, const char* labelText);
     static int getCellWidth (const Control& control);
     static int getGroupWidth (const Group& group);
+    int getRowWidth (int row) const;
+    int getNumCellsInRow (int row) const;
     juce::Component* findControl (const char* parameterId) const;
     void showWhichRateApplies (bool synced);
 
