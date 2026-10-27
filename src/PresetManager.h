@@ -61,7 +61,6 @@ private:
 
     juce::File getUserPresetFile (const juce::String& name) const;
     void setCurrentPreset (const juce::String& name, int factoryIndex);
-    void setParameter (juce::RangedAudioParameter& parameter, float value);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PresetManager)
 };

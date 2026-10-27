@@ -3,6 +3,8 @@
 #include "FactoryPresets.h"
 #include "Parameters.h"
 
+#include <optional>
+
 namespace boringsynth
 {
 
@@ -14,6 +16,25 @@ constexpr const char* presetNameId = "presetName";
 constexpr const char* factoryPresetId = "factoryPreset";
 
 constexpr const char* presetFileExtension = ".xml";
+
+// Sets a parameter as the host would see a user moving it: one complete gesture, so hosts that
+// record automation or undo treat it as one change.
+void setParameter (juce::RangedAudioParameter& parameter, float value)
+{
+    parameter.beginChangeGesture();
+    parameter.setValueNotifyingHost (parameter.convertTo0to1 (value));
+    parameter.endChangeGesture();
+}
+
+// Sets every parameter to the value valueFor gives it (an optional float), or, where it gives none,
+// back to its default: a preset that doesn't mention a parameter leaves it at its default.
+template <typename ValueFor>
+void setEveryParameter (juce::AudioProcessor& processor, ValueFor valueFor)
+{
+    for (auto* parameter : processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+            setParameter (*ranged, valueFor (*ranged).value_or (ranged->convertFrom0to1 (ranged->getDefaultValue())));
+}
 
 } // namespace
 
@@ -51,22 +72,14 @@ void PresetManager::loadFactoryPreset (int index)
 
     const auto& preset = getFactoryPresets()[(size_t) index];
 
-    // Every parameter the preset doesn't list goes back to its default.
-    for (auto* parameter : parameters.processor.getParameters())
+    setEveryParameter (parameters.processor, [&preset] (const juce::RangedAudioParameter& parameter) -> std::optional<float>
     {
-        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+        for (const auto& [id, value] : preset.settings)
+            if (parameter.getParameterID() == id)
+                return value;
 
-        if (ranged == nullptr)
-            continue;
-
-        auto value = ranged->convertFrom0to1 (ranged->getDefaultValue());
-
-        for (const auto& [id, presetValue] : preset.settings)
-            if (ranged->getParameterID() == id)
-                value = presetValue;
-
-        setParameter (*ranged, value);
-    }
+        return {};
+    });
 
     setCurrentPreset (preset.name, index);
 }
@@ -142,19 +155,15 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
     if (! xml.hasTagName (stateTag) || xml.getIntAttribute (stateVersionId, currentStateVersion) > currentStateVersion)
         return false;
 
-    // Every parameter the preset doesn't hold (one saved before the parameter existed) goes back to
-    // its default, as an older project's would.
-    for (auto* parameter : parameters.processor.getParameters())
+    // A parameter the preset doesn't hold (one saved before the parameter existed) goes back to its
+    // default, as an older project's would.
+    setEveryParameter (parameters.processor, [&xml] (const juce::RangedAudioParameter& parameter) -> std::optional<float>
     {
-        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
+        if (const auto* entry = xml.getChildByAttribute ("id", parameter.getParameterID()))
+            return (float) entry->getDoubleAttribute ("value");
 
-        if (ranged == nullptr)
-            continue;
-
-        const auto* entry = xml.getChildByAttribute ("id", ranged->getParameterID());
-        const auto value = entry != nullptr ? (float) entry->getDoubleAttribute ("value") : ranged->convertFrom0to1 (ranged->getDefaultValue());
-        setParameter (*ranged, value);
-    }
+        return {};
+    });
 
     return true;
 }
@@ -169,15 +178,6 @@ void PresetManager::setCurrentPreset (const juce::String& name, int factoryIndex
     currentName = name;
     currentFactoryPreset = factoryIndex;
     sendChangeMessage();
-}
-
-// Sets a parameter as the host would see a user moving it: one complete gesture, so hosts that
-// record automation or undo treat it as one change.
-void PresetManager::setParameter (juce::RangedAudioParameter& parameter, float value)
-{
-    parameter.beginChangeGesture();
-    parameter.setValueNotifyingHost (parameter.convertTo0to1 (value));
-    parameter.endChangeGesture();
 }
 
 } // namespace boringsynth

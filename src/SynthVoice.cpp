@@ -6,7 +6,10 @@ namespace boringsynth
 namespace
 {
 
-// Fixed output level per note. Eight notes peaking together reach 0.8, below full scale.
+// Fixed output level per note: a sine's peak. The other waveforms are scaled to sound as loud as a
+// sine, which moves their peaks: a triangle's is 1.22 times this, a square's 0.83, and a saw's 1.44
+// (band-limiting overshoots its jump by about 18 %). Eight sines peaking together reach 0.8; eight
+// saws could pass full scale, where the output guard clips them, though their peaks rarely line up.
 constexpr float level = 0.1f;
 
 // How long the pitch takes to follow the wheel. Many keyboards send the wheel in coarse steps;

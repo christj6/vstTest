@@ -2,6 +2,8 @@
 
 #include "Parameters.h"
 
+#include <array>
+
 namespace boringsynth
 {
 

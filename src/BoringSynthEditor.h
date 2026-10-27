@@ -5,6 +5,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <vector>
 
