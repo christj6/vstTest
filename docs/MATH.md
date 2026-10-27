@@ -271,7 +271,7 @@ $$f_\text{LFO} = \frac{\text{BPM}/60}{q}, \text{ at most 50 Hz}$$
 
 While the song plays, the LFO's phase follows the song's position $P$ (in quarter notes):
 
-$$\varphi = 2\pi \cdot \operatorname{frac}\!\left( \frac{P}{q} \right)$$
+$$\varphi = 2\pi \cdot \text{frac}\left( \frac{P}{q} \right)$$
 
 If it drifts more than $10^{-4}$ of a cycle from there (only a loop, a jump or starting playback does that), it fades to the right place over 5 ms.
 
