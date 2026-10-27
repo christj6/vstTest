@@ -3,7 +3,9 @@
 // With no arguments, runs every test. With --record <file> or --compare <file>, records or
 // compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
 // plug-in's speed instead (see Benchmark.cpp). With --snapshot <file>, draws the plug-in's window
-// to a PNG file, to look at without a DAW (see EditorTests.cpp).
+// to a PNG file, to look at without a DAW (see EditorTests.cpp). With --render <midi file> <wav file>
+// <preset> [parameterId=value ...], plays a MIDI file through the plug-in with a factory preset,
+// changed by any overrides (see RenderTool.cpp).
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInitialiser;
@@ -20,9 +22,20 @@ int main (int argc, char** argv)
     if (argc == 3 && juce::String (argv[1]) == "--snapshot")
         return testing::saveEditorSnapshot (argv[2]);
 
+    if (argc >= 5 && juce::String (argv[1]) == "--render")
+    {
+        juce::StringArray overrides;
+
+        for (int i = 5; i < argc; ++i)
+            overrides.add (argv[i]);
+
+        return testing::renderMidiFile (argv[2], argv[3], argv[4], overrides);
+    }
+
     if (argc != 1)
     {
-        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark | --snapshot <file>]\n");
+        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark | --snapshot <file>\n"
+                     "              | --render <midi file> <wav file> <preset> [parameterId=value ...]]\n");
         return 1;
     }
 
@@ -33,6 +46,7 @@ int main (int argc, char** argv)
     testing::runParameterTests();
     testing::runEditorTests();
     testing::runPresetTests();
+    testing::runRenderToolTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();
     testing::runFilterTests();

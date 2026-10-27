@@ -2,7 +2,8 @@
 # render audio through the whole plug-in and check the output; ParameterTests.cpp checks parameters
 # and saved state, EditorTests.cpp the plug-in's window, and PresetTests.cpp its presets;
 # OscillatorTests.cpp, EnvelopeTests.cpp and FilterTests.cpp check those classes on their own.
-# ReferenceRender.cpp is the --record / --compare check, and Benchmark.cpp is --benchmark.
+# ReferenceRender.cpp is the --record / --compare check, Benchmark.cpp is --benchmark, and
+# RenderTool.cpp is --render.
 # Shared helpers are in TestHelpers.h and Measurements.h. New kinds of tests go in new files here,
 # with a run function declared in TestHelpers.h and called from Main.cpp.
 # Run with: ctest --test-dir build -C Release --output-on-failure
@@ -23,6 +24,7 @@ target_sources(Tests PRIVATE
     FilterTests.cpp
     ReferenceRender.cpp
     Benchmark.cpp
+    RenderTool.cpp
     ${BORINGSYNTH_SOURCES})
 
 # The oscillator tests use the plug-in's classes directly.

@@ -54,8 +54,8 @@ struct VoiceParameters
 };
 
 // One playing note: an oscillator at the note's pitch, scaled by velocity, bent by the pitch wheel
-// and moved by the LFO, filtered (when the filter is on, with its cutoff moved by the filter envelope), and shaped over
-// time by the amp envelope.
+// and moved by the LFO, filtered (when the filter is on, with its cutoff moved by the filter
+// envelope), and shaped over time by the amp envelope.
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:

@@ -172,6 +172,7 @@ void runLfoTests();
 void runParameterTests();
 void runEditorTests();
 void runPresetTests();
+void runRenderToolTests();
 void runOscillatorTests();
 void runEnvelopeTests();
 void runFilterTests();
@@ -185,5 +186,9 @@ int runBenchmark();
 
 // Draws the plug-in's window to a PNG file (EditorTests.cpp). Returns the program's exit code.
 int saveEditorSnapshot (const char* path);
+
+// Plays a MIDI file through the plug-in with a factory preset, changed by any "parameterId=value"
+// overrides, to a WAV file (RenderTool.cpp). Returns the program's exit code.
+int renderMidiFile (const char* midiPath, const char* wavPath, const char* presetName, const juce::StringArray& overrides);
 
 } // namespace testing
