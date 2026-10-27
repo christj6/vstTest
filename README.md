@@ -54,7 +54,7 @@ It's built with [JUCE](https://juce.com) 9.0.3 and CMake. The code is in `src`:
 | [`BandLimitedWaveTable`](src/BandLimitedWaveTable.cpp) | A waveform as a ladder of wave tables with fewer and fewer high harmonics (built with an FFT), so each note reads one that doesn't alias |
 | [`WaveTable`](src/WaveTable.cpp) | One cycle of a waveform, stored as 2048 samples and read with interpolation; built once when the plug-in loads |
 
-Before changing how it works, read [`docs/DESIGN.md`](docs/DESIGN.md). It covers how the pieces fit together, the identifiers that must never change, the real-time rules, and why the main decisions were made. The plan for what comes next is in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Before changing how it works, read [`docs/DESIGN.md`](docs/DESIGN.md). It covers how the pieces fit together, the identifiers that must never change, the real-time rules, and why the main decisions were made. The plan for what comes next is in [`docs/ROADMAP.md`](docs/ROADMAP.md), and the maths behind the sound (pitch, aliasing, band-limiting, RMS, the filter, the LFO) is explained in [`docs/MATH.md`](docs/MATH.md).
 
 ## How to build the plug-in
 

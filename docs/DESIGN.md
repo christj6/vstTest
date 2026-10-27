@@ -2,7 +2,7 @@
 
 How the plug-in is put together, the rules it follows, and why the main decisions were made. Read this before changing anything structural. When a decision here changes, update this file in the same commit.
 
-The step-by-step plan is in [ROADMAP.md](ROADMAP.md).
+The step-by-step plan is in [ROADMAP.md](ROADMAP.md), and the maths each part calculates is in [MATH.md](MATH.md).
 
 ## How a note becomes sound
 
