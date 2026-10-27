@@ -16,11 +16,15 @@ set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoringSynthProcessor.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Envelope.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/FactoryPresets.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/FactoryPresets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Filter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Lfo.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PresetManager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PresetManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Synth.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Synth.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SynthVoice.cpp

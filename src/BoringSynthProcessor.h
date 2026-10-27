@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Parameters.h"
+#include "PresetManager.h"
 #include "Synth.h"
 #include "Waveforms.h"
 
@@ -9,7 +10,8 @@
 // A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
-// (BoringSynthEditor) lays out a control for every parameter. The pitch wheel bends notes, the mod
+// (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
+// factory presets, which are also its programs, and your own. The pitch wheel bends notes, the mod
 // wheel can add to the LFO's depth, and the sustain pedal holds notes. The parameters are the output
 // volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
 // sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
@@ -40,19 +42,24 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override;
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return {}; }
+    // The factory presets, as the host's list of programs. Its current program is the current factory
+    // preset, or Init's position if the current preset isn't one.
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    PresetManager& getPresetManager() noexcept { return presets; }
+
 private:
     // Declared before the synth, so they outlive the voices that read them.
     WaveformTables waveformTables;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
+    PresetManager presets { parameters, PresetManager::getDefaultUserPresetFolder() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
     std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);

@@ -32,6 +32,7 @@ int main (int argc, char** argv)
     testing::runLfoTests();
     testing::runParameterTests();
     testing::runEditorTests();
+    testing::runPresetTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();
     testing::runFilterTests();

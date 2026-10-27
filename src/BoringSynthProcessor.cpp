@@ -99,7 +99,7 @@ void BoringSynthProcessor::prepareToPlay (double sampleRate, int)
 
 juce::AudioProcessorEditor* BoringSynthProcessor::createEditor()
 {
-    return new BoringSynthEditor (*this, parameters);
+    return new BoringSynthEditor (*this, parameters, presets);
 }
 
 bool BoringSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -125,10 +125,35 @@ double BoringSynthProcessor::getTailLengthSeconds() const
     return ampRelease->load();
 }
 
+int BoringSynthProcessor::getNumPrograms()
+{
+    return presets.getNumFactoryPresets();
+}
+
+int BoringSynthProcessor::getCurrentProgram()
+{
+    return std::max (0, presets.getCurrentFactoryPreset());
+}
+
+void BoringSynthProcessor::setCurrentProgram (int index)
+{
+    // Some hosts set the program again when they reopen a project, after restoring its settings.
+    // Loading it then would throw away any changes made since choosing it, so choosing the program
+    // that's already current does nothing.
+    if (index != getCurrentProgram())
+        presets.loadFactoryPreset (index);
+}
+
+const juce::String BoringSynthProcessor::getProgramName (int index)
+{
+    return presets.getFactoryPresetName (index);
+}
+
 void BoringSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
     state.setProperty (stateVersionId, currentStateVersion, nullptr);
+    presets.writeTo (state);
 
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -143,7 +168,9 @@ void BoringSynthProcessor::setStateInformation (const void* data, int sizeInByte
     if (xml == nullptr || ! xml->hasTagName (stateTag))
         return;
 
-    parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    const auto state = juce::ValueTree::fromXml (*xml);
+    parameters.replaceState (state);
+    presets.readFrom (state);
 }
 
 float BoringSynthProcessor::getVolumeGain() const

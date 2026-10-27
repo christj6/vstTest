@@ -47,12 +47,40 @@ constexpr int numRows = 3;
 
 constexpr int groupHeight = groupTitleHeight + cellHeight + groupPadding;
 
+// The preset bar along the top.
+constexpr int presetBarHeight = 28;
+constexpr int presetLabelWidth = 52;
+constexpr int presetMenuWidth = 260;
+constexpr int saveButtonWidth = 80;
+
+// Preset menu item IDs: the factory presets from 1, yours from 1001.
+constexpr int firstFactoryItemId = 1;
+constexpr int firstUserItemId = 1001;
+constexpr int noUserPresetsItemId = 1000;
+
 } // namespace
 
-BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state)
+BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state, PresetManager& presetManager)
     : AudioProcessorEditor (processor),
-      parameters (state)
+      parameters (state),
+      presets (presetManager)
 {
+    presetLabel.setText ("Preset", juce::dontSendNotification);
+    addAndMakeVisible (presetLabel);
+
+    presetMenu.setComponentID ("presetMenu");
+    presetMenu.setTitle ("Preset");
+    presetMenu.beforeShowing = [this] { refreshPresetMenu(); };
+    presetMenu.onChange = [this] { presetChosen(); };
+    addAndMakeVisible (presetMenu);
+
+    saveButton.setComponentID ("savePreset");
+    saveButton.onClick = [this] { askToSavePreset(); };
+    addAndMakeVisible (saveButton);
+
+    refreshPresetMenu();
+    presets.addChangeListener (this);
+
     int width = 0;
     std::array<int, numRows> rowWidths {};
 
@@ -77,10 +105,103 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
         syncAttachment->sendInitialUpdate();
     }
 
-    setSize (width + gap, numRows * (groupHeight + gap) + gap);
+    setSize (width + gap, gap + presetBarHeight + gap + numRows * (groupHeight + gap));
 }
 
-BoringSynthEditor::~BoringSynthEditor() = default;
+BoringSynthEditor::~BoringSynthEditor()
+{
+    presets.removeChangeListener (this);
+}
+
+//==============================================================================
+// Presets.
+
+// Lists the factory presets, then yours, and shows the current one.
+void BoringSynthEditor::refreshPresetMenu()
+{
+    presetMenu.clear (juce::dontSendNotification);
+    presetMenu.addSectionHeading ("Factory");
+
+    for (int i = 0; i < presets.getNumFactoryPresets(); ++i)
+        presetMenu.addItem (presets.getFactoryPresetName (i), firstFactoryItemId + i);
+
+    presetMenu.addSectionHeading ("Your presets");
+    userPresetNames = presets.getUserPresetNames();
+
+    if (userPresetNames.isEmpty())
+    {
+        presetMenu.addItem ("(none saved yet)", noUserPresetsItemId);
+        presetMenu.setItemEnabled (noUserPresetsItemId, false);
+    }
+
+    for (int i = 0; i < userPresetNames.size(); ++i)
+        presetMenu.addItem (userPresetNames[i], firstUserItemId + i);
+
+    const auto current = presets.getCurrentPresetName();
+
+    if (presets.getCurrentFactoryPreset() >= 0)
+        presetMenu.setSelectedId (firstFactoryItemId + presets.getCurrentFactoryPreset(), juce::dontSendNotification);
+    else if (userPresetNames.contains (current))
+        presetMenu.setSelectedId (firstUserItemId + userPresetNames.indexOf (current), juce::dontSendNotification);
+    else
+        presetMenu.setText (current, juce::dontSendNotification);
+}
+
+void BoringSynthEditor::presetChosen()
+{
+    const auto id = presetMenu.getSelectedId();
+
+    if (id >= firstUserItemId)
+        presets.loadUserPreset (userPresetNames[id - firstUserItemId]);
+    else if (id >= firstFactoryItemId && id < noUserPresetsItemId)
+        presets.loadFactoryPreset (id - firstFactoryItemId);
+}
+
+// Asks for a name (offering the current preset's, if it's one of yours), then saves.
+void BoringSynthEditor::askToSavePreset()
+{
+    auto* window = new juce::AlertWindow ("Save preset", "Save the current settings as a preset named:", juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("name", presets.getCurrentFactoryPreset() < 0 ? presets.getCurrentPresetName() : juce::String());
+    window->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<BoringSynthEditor> editor (this);
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([editor, window] (int result)
+    {
+        const auto name = window->getTextEditorContents ("name").trim();
+
+        if (editor == nullptr || result != 1 || name.isEmpty())
+            return;
+
+        if (! editor->presets.userPresetExists (name))
+        {
+            editor->savePreset (name);
+            return;
+        }
+
+        juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Replace preset?",
+                                            "You already have a preset named \"" + name + "\". Replace it?",
+                                            "Replace", "Cancel", editor,
+                                            juce::ModalCallbackFunction::create ([editor, name] (int replace)
+                                            {
+                                                if (editor != nullptr && replace == 1)
+                                                    editor->savePreset (name);
+                                            }));
+    }), true);
+}
+
+void BoringSynthEditor::savePreset (const juce::String& name)
+{
+    if (! presets.saveUserPreset (name))
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Couldn't save the preset",
+                                                "BoringSynth couldn't write to " + presets.getUserPresetFolder().getFullPathName() + ".",
+                                                {}, this);
+}
+
+void BoringSynthEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    refreshPresetMenu();
+}
 
 BoringSynthEditor::Control& BoringSynthEditor::addControl (const char* parameterId, const char* labelText)
 {
@@ -154,13 +275,19 @@ void BoringSynthEditor::paint (juce::Graphics& g)
 
 void BoringSynthEditor::resized()
 {
+    auto presetBar = juce::Rectangle<int> (gap, gap, getWidth() - 2 * gap, presetBarHeight);
+    presetLabel.setBounds (presetBar.removeFromLeft (presetLabelWidth));
+    presetMenu.setBounds (presetBar.removeFromLeft (presetMenuWidth));
+    presetBar.removeFromLeft (gap);
+    saveButton.setBounds (presetBar.removeFromLeft (saveButtonWidth));
+
     std::array<int, numRows> rowX;
     rowX.fill (gap);
 
     for (auto& group : groups)
     {
         const auto x = rowX[(size_t) group.row];
-        const auto y = gap + group.row * (groupHeight + gap);
+        const auto y = gap + presetBarHeight + gap + group.row * (groupHeight + gap);
         const auto width = getGroupWidth (group);
         group.box->setBounds (x, y, width, groupHeight);
         rowX[(size_t) group.row] += width + gap;

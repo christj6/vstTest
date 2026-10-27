@@ -1,5 +1,7 @@
 #include "TestHelpers.h"
 
+#include "BoringSynthProcessor.h"
+
 // Editor tests: the plug-in's window opens, closes and opens again, and makes no difference to the
 // sound; every parameter has a control of the right kind, connected both ways; and the controls fit.
 
@@ -228,6 +230,59 @@ void testControlsFitAndDontOverlap()
     check (allInside && noneOverlap, "every control fits in the window, and none overlap");
 }
 
+void testPresetMenu()
+{
+    // The preset menu lists the factory presets, then yours (here, from a temporary folder), shows the
+    // current one, loads the one you pick, and follows a program change from the host.
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                            .getChildFile ("BoringSynthEditorTests-" + juce::String (juce::Random::getSystemRandom().nextInt64()));
+    auto processor = std::unique_ptr<boringsynth::BoringSynthProcessor> (dynamic_cast<boringsynth::BoringSynthProcessor*> (createPluginFilter()));
+    auto& presets = processor->getPresetManager();
+    presets.setUserPresetFolder (folder);
+    presets.saveUserPreset ("Mine");
+    presets.dispatchPendingMessages();
+
+    auto* editor = processor->createEditorAndMakeActive();
+    auto* menu = dynamic_cast<juce::ComboBox*> (editor->findChildWithID ("presetMenu"));
+    auto* save = editor->findChildWithID ("savePreset");
+
+    if (menu == nullptr || save == nullptr)
+    {
+        check (false, "the editor has a preset menu and a Save button");
+        closeEditor (*processor);
+        folder.deleteRecursively();
+        return;
+    }
+
+    juce::StringArray items;
+
+    for (int i = 0; i < menu->getNumItems(); ++i)
+        items.add (menu->getItemText (i));
+
+    juce::StringArray expected;
+
+    for (int i = 0; i < presets.getNumFactoryPresets(); ++i)
+        expected.add (presets.getFactoryPresetName (i));
+
+    expected.add ("Mine");
+    std::printf ("      preset menu: %s (showing '%s')\n", items.joinIntoString (", ").toRawUTF8(), menu->getText().toRawUTF8());
+    check (items == expected && menu->getText() == "Mine", "the preset menu lists the factory presets, then yours, and shows the current one");
+
+    menu->setSelectedItemIndex (1, juce::sendNotificationSync);
+    presets.dispatchPendingMessages();
+    const auto picked = presets.getCurrentPresetName() == presets.getFactoryPresetName (1) && menu->getText() == presets.getFactoryPresetName (1);
+
+    processor->setCurrentProgram (3);
+    presets.dispatchPendingMessages();
+    const auto followed = menu->getText() == presets.getFactoryPresetName (3);
+
+    check (picked, "picking a preset from the menu loads it");
+    check (followed, "the preset menu follows a program change from the host");
+
+    closeEditor (*processor);
+    folder.deleteRecursively();
+}
+
 } // namespace
 
 void runEditorTests()
@@ -240,6 +295,7 @@ void runEditorTests()
     testKnobsShowTheParametersText();
     testSyncGreysOutTheRateNotInUse();
     testControlsFitAndDontOverlap();
+    testPresetMenu();
 }
 
 int saveEditorSnapshot (const char* path)
