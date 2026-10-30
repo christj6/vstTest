@@ -918,6 +918,53 @@ void testLfoRestart()
     check (restarted.getNextSample (phaseDelta, 240.0) == 0.0f, "restarting with no crossfade starts again at once");
 }
 
+void testLfoRestartDuringAFade()
+{
+    // A 3 Hz sine restarted at its top (1) fades towards the restarted wave (near 0). Restarted again
+    // halfway through that fade, from about 0.5, it carries on from there rather than jumping back
+    // towards the first fade's outgoing wave (still near 1). And a shape change during a fade does
+    // the same. Steps stay at most a little over a fade's 1 / 240 a sample, against 0.5 for a jump.
+    constexpr int fadeLength = 240, firstRestart = 4000, secondRestart = firstRestart + 120;
+    const auto phaseDelta = juce::MathConstants<double>::twoPi * 3.0 / testSampleRate;
+    boringsynth::Lfo restartedTwice, restartedThenReshaped;
+
+    // Reaches the top of the sine (a quarter cycle) at the first restart.
+    const auto quarterCycle = (int) (0.25 * testSampleRate / 3.0);
+    float previousRestarted = 0.0f, previousReshaped = 0.0f, largestStepRestarted = 0.0f, largestStepReshaped = 0.0f;
+
+    for (int i = firstRestart - quarterCycle; i < secondRestart + 2 * fadeLength; ++i)
+    {
+        if (i == firstRestart)
+        {
+            restartedTwice.restart (fadeLength);
+            restartedThenReshaped.restart (fadeLength);
+        }
+
+        if (i == secondRestart)
+        {
+            restartedTwice.restart (fadeLength);
+            restartedThenReshaped.setShape (square, fadeLength);
+        }
+
+        const auto restarted = restartedTwice.getNextSample (phaseDelta, 240.0);
+        const auto reshaped = restartedThenReshaped.getNextSample (phaseDelta, 240.0);
+
+        if (i > firstRestart - quarterCycle)
+        {
+            largestStepRestarted = std::max (largestStepRestarted, std::abs (restarted - previousRestarted));
+            largestStepReshaped = std::max (largestStepReshaped, std::abs (reshaped - previousReshaped));
+        }
+
+        previousRestarted = restarted;
+        previousReshaped = reshaped;
+    }
+
+    std::printf ("      largest step through a fade interrupted by a restart %.4f, by a shape change %.4f (a fade's own: %.4f)\n",
+                 largestStepRestarted, largestStepReshaped, 1.0f / fadeLength);
+    check (largestStepRestarted < 2.0f / fadeLength && largestStepReshaped < 2.0f / fadeLength,
+           "a restart or shape change part-way through an LFO fade carries on from where it had got to");
+}
+
 } // namespace
 
 void runLfoTests()
@@ -961,6 +1008,7 @@ void runLfoTests()
     testLfoJumpsTakeFiveMs();
     testLfoShapeCrossfade();
     testLfoRestart();
+    testLfoRestartDuringAFade();
 }
 
 } // namespace testing

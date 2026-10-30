@@ -157,11 +157,17 @@ void SynthVoice::stopNote (float, bool allowTailOff)
 
     // Cut off at once. In practice that means the synth is stealing this voice for a new note
     // because every voice is busy. (It also happens when the sample rate changes, which drops any
-    // fading note anyway.) If the note is still sounding, hand it to fadingNote to fade out,
-    // rather than stopping it dead.
+    // fading note anyway.) If the note is still sounding, hand it to a free fading slot to fade out,
+    // rather than stopping it dead. With none free, it takes the slot whose fade is furthest gone.
     if (phaseDelta != 0.0 && ampEnvelope.isActive())
     {
-        fadingNote = FadingNote { oscillator,
+        auto* slot = &fadingNotes[0];
+
+        for (auto& candidate : fadingNotes)
+            if (! candidate.has_value() || (slot->has_value() && candidate->gain < (*slot)->gain))
+                slot = &candidate;
+
+        *slot = FadingNote { oscillator,
                                   filter,
                                   filterRunning,
                                   filterMix.getCurrentValue(),
@@ -185,8 +191,9 @@ void SynthVoice::pitchWheelMoved (int newPitchWheelValue)
 
 void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
 {
-    if (fadingNote.has_value())
-        renderFadingNote (buffer, startSample, numSamples);
+    for (auto& slot : fadingNotes)
+        if (slot.has_value())
+            renderFadingNote (slot, buffer, startSample, numSamples);
 
     if (phaseDelta == 0.0)
         return;
@@ -224,9 +231,10 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     }
 }
 
-void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
+void SynthVoice::renderFadingNote (std::optional<FadingNote>& slot, juce::AudioBuffer<float>& buffer, int startSample,
+                                   int numSamples)
 {
-    auto& note = *fadingNote;
+    auto& note = *slot;
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
@@ -251,7 +259,7 @@ void SynthVoice::renderFadingNote (juce::AudioBuffer<float>& buffer, int startSa
 
         if (note.gain <= 0.0f)
         {
-            fadingNote.reset();
+            slot.reset();
             return;
         }
     }
@@ -369,7 +377,8 @@ float SynthVoice::getFilterCutoffTarget() const
 void SynthVoice::setCurrentPlaybackSampleRate (double newRate)
 {
     // A fading note's pitch and fade were worked out for the old sample rate.
-    fadingNote.reset();
+    for (auto& slot : fadingNotes)
+        slot.reset();
     SynthesiserVoice::setCurrentPlaybackSampleRate (newRate);
 }
 

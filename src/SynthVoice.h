@@ -99,7 +99,12 @@ private:
     int noteNumber = 60;       // the MIDI note playing, for the filter's key tracking
     float noteVelocity = 1.0f; // the note's velocity, 0 to 1, for velocity → filter
     Envelope ampEnvelope;
-    std::optional<FadingNote> fadingNote;
+
+    // Notes fading out, each in a slot of its own, so a note cut off while an earlier one is still
+    // fading doesn't cut that one off too. A fade lasts 5 ms, so filling every slot takes the voice
+    // being stolen five times within that; the next then replaces the quietest.
+    static constexpr int maxFadingNotes = 4;
+    std::array<std::optional<FadingNote>, maxFadingNotes> fadingNotes;
 
     // Multiplies the note's frequency. Smoothed multiplicatively, so the glide is even in pitch.
     juce::SmoothedValue<double, juce::ValueSmoothingTypes::Multiplicative> frequencyRatio { 1.0 };
@@ -125,7 +130,8 @@ private:
     Envelope filterEnvelope;
     juce::SmoothedValue<float> filterEnvAmount; // octaves
 
-    void renderFadingNote (juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    static void renderFadingNote (std::optional<FadingNote>& slot, juce::AudioBuffer<float>& buffer, int startSample,
+                                  int numSamples);
     void updateFilterTargets (int startSample);
     float applyFilter (float input, float filterEnvelopeLevel, int sample) noexcept;
     int getCurrentFilterType() const;

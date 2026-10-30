@@ -17,7 +17,9 @@ namespace boringsynth
 // Like Oscillator, it holds only the phase; the caller passes how far it moves on each sample.
 //
 // A change of shape, or a restart, can fade from the wave as it was (the "outgoing" wave, which
-// carries on in its old shape from its old phase) to the new one, so nothing jumps.
+// carries on in its old shape from its old phase) to the new one, so nothing jumps. One that comes
+// part-way through another fade fades from the value the LFO last gave instead, held steady: the
+// blend it was in the middle of can't carry on as a single wave.
 class Lfo
 {
 public:
@@ -64,7 +66,7 @@ public:
             if (--fadeRemaining > 0)
             {
                 const auto progress = (float) (fadeLength - fadeRemaining) / (float) fadeLength;
-                const auto outgoingValue = getValue (outgoingShape, outgoingPhase, jumpWidth);
+                const auto outgoingValue = outgoingHeld ? heldValue : getValue (outgoingShape, outgoingPhase, jumpWidth);
                 value = outgoingValue + progress * (value - outgoingValue);
             }
 
@@ -72,6 +74,7 @@ public:
         }
 
         advance (phase, phaseDelta);
+        lastValue = value;
         return value;
     }
 
@@ -119,15 +122,21 @@ private:
     int shape = sineWaveform;
     double phase = 0.0;
 
-    // The wave being faded out, while fadeRemaining is above 0.
+    // What's being faded out, while fadeRemaining is above 0: a wave carrying on in its old shape
+    // from its old phase, or, if outgoingHeld, a value held steady.
     int outgoingShape = sineWaveform;
     double outgoingPhase = 0.0;
+    bool outgoingHeld = false;
+    float heldValue = 0.0f;
     int fadeLength = 1;    // samples the current crossfade lasts; never 0, as the fade divides by it
     int fadeRemaining = 0; // samples of it still to go
 
-    // Begins fading out the wave as it is now. If a fade is already under way, it keeps fading from
-    // the same outgoing wave, starting over: so a chord, whose notes each restart the LFO on the same
-    // sample, fades once from where the LFO was, rather than cutting the first fade short.
+    float lastValue = 0.0f; // the value getNextSample last returned
+
+    // Begins fading out the wave as it is now. If a fade began on this same sample, it keeps fading
+    // from that fade's outgoing wave, starting over: so a chord, whose notes each restart the LFO on
+    // the same sample, fades once from where the LFO was. If a fade is part-way through, it fades from
+    // the value the LFO last gave, held, rather than jumping back to that fade's start.
     void startFade (int crossfadeSamples) noexcept
     {
         if (crossfadeSamples <= 0)
@@ -140,6 +149,12 @@ private:
         {
             outgoingShape = shape;
             outgoingPhase = phase;
+            outgoingHeld = false;
+        }
+        else if (fadeRemaining < fadeLength)
+        {
+            heldValue = lastValue;
+            outgoingHeld = true;
         }
 
         fadeLength = crossfadeSamples;

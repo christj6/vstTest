@@ -241,6 +241,44 @@ void testStolenNoteFadesOut()
     check (afterFade < 1.0e-6f, "and it's silent 5 ms after it was stolen");
 }
 
+void testVoiceStolenTwiceKeepsBothFades()
+{
+    // A 17th note steals a middle C's voice and is let go at once; 92 samples later (half a cycle of
+    // middle C, at its trough) an 18th note steals that same voice again, as JUCE steals a voice
+    // whose note has been let go first. The first stolen note's fade carries on regardless: isolated
+    // as in testStolenNoteFadesOut, it's still at half its level halfway through its fade, and has
+    // no jumps.
+    constexpr int secondSteal = stealSample + 92;
+    auto withEvents = [] (int firstChannel)
+    {
+        auto events = sixteenMiddleCs (firstChannel);
+        events.push_back ({ stealSample, noteOn (64) });
+        events.push_back ({ stealSample + 1, noteOff (64) });
+        events.push_back ({ secondSteal, noteOn (67) });
+        return render ({ .numSamples = 9600, .events = events, .setUp = quieter });
+    };
+
+    const auto withSteals = withEvents (1);
+    const auto withoutStolenNote = withEvents (2);
+    const auto unstolen = render ({ .numSamples = 9600, .events = { { 0, noteOn (60) } }, .setUp = quieter });
+
+    std::vector<float> stolenNote;
+
+    for (auto i = stealSample; i < stealSample + 240; ++i)
+        stolenNote.push_back (withSteals[(size_t) i] - withoutStolenNote[(size_t) i]);
+
+    const auto halfway = stealSample + 120;
+    const auto fadeAtHalfway = std::abs (stolenNote[120]) / std::abs (unstolen[(size_t) halfway]);
+    const auto largestJump = largestStep (stolenNote);
+    const auto ownSteepest = largestStep (std::vector<float> (unstolen.begin(), unstolen.begin() + stealSample));
+
+    std::printf ("      first stolen note, stolen again 92 samples into its fade: at %.3f of its level halfway "
+                 "through the fade; largest step %.5f (the unstolen note's own steepest: %.5f)\n",
+                 fadeAtHalfway, largestJump, ownSteepest);
+    check (std::abs (fadeAtHalfway - 0.5f) < 0.01f && largestJump <= ownSteepest * 1.1f,
+           "a voice stolen twice within 5 ms keeps fading its first stolen note");
+}
+
 // With the LFO sent to `destination` at `depthPercent`, and at `cyclePosition` (0 to 1) of its cycle
 // when a note is stolen: the largest difference, in the first half of the stolen note's fade, between
 // it and the unstolen note faded the same way. Near the top or bottom of its cycle the LFO barely
@@ -349,6 +387,7 @@ void runNoteTests()
     testBlockSizeIndependence();
     testVoiceStealDoesNotClick();
     testStolenNoteFadesOut();
+    testVoiceStolenTwiceKeepsBothFades();
     testStolenNoteKeepsLfoEffect();
     testAllSoundOffFades();
     testStolenNoteKeepsItsFilter();
