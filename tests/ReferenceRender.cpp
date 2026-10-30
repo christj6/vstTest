@@ -1,10 +1,15 @@
 #include "TestHelpers.h"
 
+#include <cstring>
+#include <limits>
+
 // A fixed render covering everything the plug-in does, for checking that a change doesn't alter the
 // sound (or alters it only as much as intended). Record it before a change, compare after:
 //   Tests --record build/reference.bin
 //   (make the change and rebuild)
-//   Tests --compare build/reference.bin
+//   Tests --compare build/reference.bin [tolerance in dBFS]
+// The comparison fails (exit code 1) if any sample differs, or, given a tolerance, differs by more
+// than that: -120 lets through differences quieter than -120 dBFS, for a change meant to be inaudible.
 // The file is a header followed by the raw samples. It's only meant to be compared on the machine
 // and build that recorded it, so it isn't committed.
 
@@ -94,7 +99,7 @@ int recordReference (const char* path)
     return 0;
 }
 
-int compareReference (const char* path)
+int compareReference (const char* path, std::optional<double> toleranceDb)
 {
     const auto file = fileFromArgument (path);
     juce::FileInputStream stream (file);
@@ -127,7 +132,12 @@ int compareReference (const char* path)
 
         for (size_t i = 0; i < output.size(); ++i)
         {
-            const auto difference = std::abs ((double) output[i] - (double) reference[i]);
+            // NaN or infinity on either side counts as the largest possible difference, as a NaN
+            // would otherwise compare as smaller than everything and go unreported.
+            auto difference = std::abs ((double) output[i] - (double) reference[i]);
+
+            if (! std::isfinite (difference))
+                difference = std::numeric_limits<double>::infinity();
 
             if (difference > largest)
             {
@@ -146,11 +156,52 @@ int compareReference (const char* path)
     }
 
     if (largestOverall == 0.0)
+    {
         std::printf ("the output is identical to the reference\n");
-    else
-        std::printf ("largest difference overall: %.3e (%.1f dBFS)\n", largestOverall, 20.0 * std::log10 (largestOverall));
+        return 0;
+    }
 
-    return 0;
+    const auto largestDb = 20.0 * std::log10 (largestOverall);
+    std::printf ("largest difference overall: %.3e (%.1f dBFS)\n", largestOverall, largestDb);
+
+    if (toleranceDb.has_value() && largestDb <= *toleranceDb)
+    {
+        std::printf ("within the tolerance of %.1f dBFS\n", *toleranceDb);
+        return 0;
+    }
+
+    std::printf ("DIFFERS from the reference%s\n", toleranceDb.has_value() ? " by more than the tolerance" : "");
+    return 1;
+}
+
+void runReferenceRenderTests()
+{
+    // The comparison passes the reference itself, and fails a render that differs anywhere, unless
+    // the difference is within a tolerance given for it. One sample of the recording is changed by
+    // 0.001 (-60 dBFS), on top of whatever it was.
+    juce::TemporaryFile temporary (".bin");
+    const auto path = temporary.getFile().getFullPathName();
+    const auto recorded = recordReference (path.toRawUTF8()) == 0;
+    const auto identicalPasses = compareReference (path.toRawUTF8(), {}) == 0;
+
+    juce::MemoryBlock contents;
+    temporary.getFile().loadFileAsData (contents);
+
+    // The header (tag, version, section count) and the first section's length, then its first sample.
+    constexpr size_t firstSample = 4 * sizeof (int);
+    float sample;
+    std::memcpy (&sample, static_cast<char*> (contents.getData()) + firstSample, sizeof (float));
+    sample += 0.001f;
+    std::memcpy (static_cast<char*> (contents.getData()) + firstSample, &sample, sizeof (float));
+    temporary.getFile().replaceWithData (contents.getData(), contents.getSize());
+
+    const auto differenceFails = compareReference (path.toRawUTF8(), {}) == 1;
+    const auto withinTolerancePasses = compareReference (path.toRawUTF8(), -50.0) == 0;
+    const auto beyondToleranceFails = compareReference (path.toRawUTF8(), -70.0) == 1;
+
+    check (recorded && identicalPasses, "comparing the reference render with itself passes");
+    check (differenceFails, "a render that differs from the reference fails the comparison");
+    check (withinTolerancePasses && beyondToleranceFails, "a difference fails only beyond the tolerance given");
 }
 
 } // namespace testing

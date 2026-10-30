@@ -130,26 +130,33 @@ double BoringSynthProcessor::getTailLengthSeconds() const
 
 int BoringSynthProcessor::getNumPrograms()
 {
-    return presets.getNumFactoryPresets();
+    return presets.getNumFactoryPresets() + 1;
 }
 
 int BoringSynthProcessor::getCurrentProgram()
 {
-    return std::max (0, presets.getCurrentFactoryPreset());
+    const auto factoryPreset = presets.getCurrentFactoryPreset();
+    return factoryPreset >= 0 ? factoryPreset : getUserPresetProgram();
 }
 
 void BoringSynthProcessor::setCurrentProgram (int index)
 {
     // Some hosts set the program again when they reopen a project, after restoring its settings.
     // Loading it then would throw away any changes made since choosing it, so choosing the program
-    // that's already current does nothing.
+    // that's already current does nothing. The user-preset program has nothing to load either: it's
+    // past the factory presets, which loadFactoryPreset ignores.
     if (index != getCurrentProgram())
         presets.loadFactoryPreset (index);
 }
 
 const juce::String BoringSynthProcessor::getProgramName (int index)
 {
-    return presets.getFactoryPresetName (index);
+    return index == getUserPresetProgram() ? juce::String (userPresetProgramName) : presets.getFactoryPresetName (index);
+}
+
+int BoringSynthProcessor::getUserPresetProgram() const
+{
+    return presets.getNumFactoryPresets();
 }
 
 void BoringSynthProcessor::getStateInformation (juce::MemoryBlock& destData)

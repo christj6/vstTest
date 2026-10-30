@@ -19,6 +19,8 @@ The plan for growing BoringSynth, one small step at a time, from a plain sine sy
 
 Along the way, the test tools also gained a reference render (`--record` / `--compare`), named render options, shared measuring helpers, a CPU benchmark (`--benchmark`), a stand-in for a host's play head (tempo, song position, playing or not), a picture of the window (`--snapshot`), and a way to play a MIDI file through the plug-in to a WAV file (`--render`).
 
+**Fixes from a code review**, done in three passes. Pass 1 (done): `--compare` now fails on a difference (it used to report and succeed), with an optional tolerance; and choosing Init from the host after one of your own presets now loads it, through a `(User preset)` program after the factory presets. Pass 2 (next): an LFO fade interrupted by another starts from what the LFO is actually putting out, and a voice keeps more than one fading note, so stealing it twice in 5 ms doesn't cut the first off. Pass 3: the render tool's tail and tempo changes, and tightening a few claims in these docs.
+
 ## Next
 
 **Phase 8: Full wavetables.** Milestone: a wavetable synth.

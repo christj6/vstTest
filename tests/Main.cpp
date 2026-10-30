@@ -1,7 +1,7 @@
 #include "TestHelpers.h"
 
-// With no arguments, runs every test. With --record <file> or --compare <file>, records or
-// compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
+// With no arguments, runs every test. With --record <file> or --compare <file> [tolerance in dBFS],
+// records or compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
 // plug-in's speed instead (see Benchmark.cpp). With --snapshot <file> [display scale], draws the
 // plug-in's window to a PNG file, to look at without a DAW, as a display at that scale (2 for 200 %)
 // would show it (see EditorTests.cpp). With --render <midi file> <wav file>
@@ -14,8 +14,9 @@ int main (int argc, char** argv)
     if (argc == 3 && juce::String (argv[1]) == "--record")
         return testing::recordReference (argv[2]);
 
-    if (argc == 3 && juce::String (argv[1]) == "--compare")
-        return testing::compareReference (argv[2]);
+    if ((argc == 3 || argc == 4) && juce::String (argv[1]) == "--compare")
+        return testing::compareReference (argv[2], argc == 4 ? std::optional<double> (juce::String (argv[3]).getDoubleValue())
+                                                              : std::nullopt);
 
     if (argc == 2 && juce::String (argv[1]) == "--benchmark")
         return testing::runBenchmark();
@@ -35,7 +36,8 @@ int main (int argc, char** argv)
 
     if (argc != 1)
     {
-        std::printf ("usage: Tests [--record <file> | --compare <file> | --benchmark | --snapshot <file> [display scale]\n"
+        std::printf ("usage: Tests [--record <file> | --compare <file> [tolerance in dBFS] | --benchmark\n"
+                     "              | --snapshot <file> [display scale]\n"
                      "              | --render <midi file> <wav file> <preset> [parameterId=value ...]]\n");
         return 1;
     }
@@ -48,6 +50,7 @@ int main (int argc, char** argv)
     testing::runEditorTests();
     testing::runPresetTests();
     testing::runRenderToolTests();
+    testing::runReferenceRenderTests();
     testing::runOscillatorTests();
     testing::runEnvelopeTests();
     testing::runFilterTests();

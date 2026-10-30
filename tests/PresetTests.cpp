@@ -314,22 +314,25 @@ void testPresetSavedWithTheProject()
     auto old = createSynth();
     old->setStateInformation (oldState.getData(), (int) oldState.getSize());
     check (old->getPresetManager().getCurrentPresetName().isEmpty() && old->getPresetManager().getCurrentFactoryPreset() == -1
-               && old->getCurrentProgram() == 0,
-           "a project saved before presets existed shows no preset name");
+               && old->getCurrentProgram() == old->getNumPrograms() - 1,
+           "a project saved before presets existed shows no preset name, and the host sees the user-preset program");
 }
 
 void testFactoryPresetsAsPrograms()
 {
-    // The host's program list is the factory presets. Choosing one loads it, but choosing the one
-    // that's already current does nothing: some hosts set it again when reopening a project, which
-    // mustn't throw away the changes saved with it.
+    // The host's program list is the factory presets, then one standing for anything else. Choosing
+    // a factory preset loads it, but choosing the one that's already current does nothing: some hosts
+    // set it again when reopening a project, which mustn't throw away the changes saved with it.
     auto synth = createSynth();
-    bool namesMatch = synth->getNumPrograms() == (int) boringsynth::getFactoryPresets().size();
+    const auto numFactoryPresets = (int) boringsynth::getFactoryPresets().size();
+    bool namesMatch = synth->getNumPrograms() == numFactoryPresets + 1
+                   && synth->getProgramName (numFactoryPresets) == BoringSynthProcessor::userPresetProgramName;
 
-    for (int i = 0; namesMatch && i < synth->getNumPrograms(); ++i)
+    for (int i = 0; namesMatch && i < numFactoryPresets; ++i)
         namesMatch = synth->getProgramName (i) == boringsynth::getFactoryPresets()[(size_t) i].name;
 
-    check (namesMatch && synth->getCurrentProgram() == 0, "the host's programs are the factory presets, starting on Init");
+    check (namesMatch && synth->getCurrentProgram() == 0,
+           "the host's programs are the factory presets and then the user-preset program, starting on Init");
 
     synth->setCurrentProgram (2);
     const auto loaded = synth->getCurrentProgram() == 2 && synth->getPresetManager().getCurrentPresetName() == "Pluck Bass";
@@ -348,6 +351,39 @@ void testFactoryPresetsAsPrograms()
     check (loaded, "choosing a program loads that factory preset");
     check (changesKept, "choosing the program that's already current (as a host may on reopening) keeps the changes made since");
     check (parametersAwayFromDefault (*synth).isEmpty(), "choosing another program loads it");
+}
+
+void testUserPresetThenInitProgram()
+{
+    // On a user preset the host sees the user-preset program, not Init's, so choosing Init from the
+    // host loads it. Setting the user-preset program again, as a host may on reopening a project that
+    // was on a user preset, keeps its settings.
+    TemporaryPresetFolder temporary;
+    auto synth = createSynth();
+    auto& presets = synth->getPresetManager();
+    presets.setUserPresetFolder (temporary.folder);
+    setParameter (*synth, "filterCutoff", 777.0f);
+    presets.saveUserPreset ("Mine");
+    const auto userPresetProgram = synth->getNumPrograms() - 1;
+    const auto onUserProgram = synth->getCurrentProgram() == userPresetProgram;
+
+    juce::MemoryBlock state;
+    synth->getStateInformation (state);
+    auto reopened = createSynth();
+    reopened->setStateInformation (state.getData(), (int) state.getSize());
+    reopened->setCurrentProgram (reopened->getCurrentProgram());
+    synth->setCurrentProgram (userPresetProgram);
+    const auto kept = std::abs (getParameter (*reopened, "filterCutoff") - 777.0f) < 0.5f
+                   && std::abs (getParameter (*synth, "filterCutoff") - 777.0f) < 0.5f
+                   && presets.getCurrentPresetName() == "Mine";
+
+    synth->setCurrentProgram (0);
+    const auto initLoaded = parametersAwayFromDefault (*synth).isEmpty() && synth->getCurrentProgram() == 0
+                         && presets.getCurrentPresetName() == "Init";
+
+    check (onUserProgram, "on a user preset, the host's current program is the user-preset program");
+    check (kept, "setting the user-preset program (as a host may on reopening) keeps the settings");
+    check (initLoaded, "choosing Init from the host after a user preset loads Init");
 }
 
 void testSubBass()
@@ -396,6 +432,7 @@ void runPresetTests()
     testUserPresetList();
     testPresetSavedWithTheProject();
     testFactoryPresetsAsPrograms();
+    testUserPresetThenInitProgram();
     testSubBass();
 }
 

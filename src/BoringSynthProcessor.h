@@ -11,9 +11,9 @@
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
 // (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
-// factory presets, which are also its programs, and your own. The pitch wheel bends notes, the mod
-// wheel can add to the LFO's depth, and the sustain pedal holds notes. The parameters are the output
-// volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
+// factory presets, which are also its programs (with one more for anything else), and your own. The
+// pitch wheel bends notes, the mod wheel can add to the LFO's depth, and the sustain pedal holds
+// notes. The parameters are the output volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
 // sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
 // amount, and its own envelope's attack, decay, sustain, release and amount, the LFO's rate, depth,
 // destination and shape, how much the mod wheel adds to the LFO's depth, whether each note restarts
@@ -42,13 +42,16 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override;
 
-    // The factory presets, as the host's list of programs. Its current program is the current factory
-    // preset, or Init's position if the current preset isn't one.
+    // The factory presets, as the host's list of programs, followed by one more, userPresetProgramName,
+    // which stands for any settings that aren't a factory preset (a user preset, say). The current
+    // program is the current factory preset, or that last one. Choosing it loads nothing.
     int getNumPrograms() override;
     int getCurrentProgram() override;
     void setCurrentProgram (int index) override;
     const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
+
+    static constexpr const char* userPresetProgramName = "(User preset)";
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
@@ -106,6 +109,7 @@ private:
     juce::SmoothedValue<float> volumeGain;
 
     float getVolumeGain() const;
+    int getUserPresetProgram() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BoringSynthProcessor)
 };

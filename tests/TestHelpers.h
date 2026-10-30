@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <functional>
+#include <optional>
 #include <vector>
 
 // Shared by every test file. Checks print PASS or FAIL and count failures; the program's exit code
@@ -177,9 +178,11 @@ void runOscillatorTests();
 void runEnvelopeTests();
 void runFilterTests();
 
-// The reference render (ReferenceRender.cpp). Each returns the program's exit code.
+// The reference render (ReferenceRender.cpp). Each returns the program's exit code: comparing fails
+// if the render differs, or differs by more than toleranceDb (dBFS) if one is given.
 int recordReference (const char* path);
-int compareReference (const char* path);
+int compareReference (const char* path, std::optional<double> toleranceDb);
+void runReferenceRenderTests();
 
 // The CPU benchmark (Benchmark.cpp). Returns the program's exit code.
 int runBenchmark();
