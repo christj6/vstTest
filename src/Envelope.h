@@ -59,7 +59,9 @@ public:
     }
 
     // Starts the release from wherever the level is now. The release lasts releaseSeconds from
-    // here, whatever stage the note was in.
+    // here, whatever stage the note was in; changing the release time afterwards doesn't change a
+    // release already under way. (A new attack or decay time, by contrast, changes the slope of a
+    // stage already under way, from where it is: it doesn't then take that time from there.)
     void noteOff() noexcept
     {
         if (stage == Stage::idle)

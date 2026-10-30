@@ -3,8 +3,11 @@
 #include <cstring>
 #include <limits>
 
-// A fixed render covering everything the plug-in does, for checking that a change doesn't alter the
-// sound (or alters it only as much as intended). Record it before a change, compare after:
+// A fixed render, for checking that a change doesn't alter the sound (or alters it only as much as
+// intended). It plays chords, bends, the sustain pedal and notes from very low to very high with
+// default settings, then with velocity sensitivity, a wider bend range and volume automation, in two
+// block sizes. That's the sound every new feature must keep at its defaults; the filter, envelopes
+// and LFO are checked by their own tests rather than here. Record it before a change, compare after:
 //   Tests --record build/reference.bin
 //   (make the change and rebuild)
 //   Tests --compare build/reference.bin [tolerance in dBFS]

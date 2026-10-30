@@ -192,7 +192,31 @@ int runBenchmark();
 int saveEditorSnapshot (const char* path, float displayScale);
 
 // Plays a MIDI file through the plug-in with a factory preset, changed by any "parameterId=value"
-// overrides, to a WAV file (RenderTool.cpp). Returns the program's exit code.
+// overrides, to a WAV file (RenderTool.cpp), for as long as its notes and the plug-in's release
+// last. Returns the program's exit code.
 int renderMidiFile (const char* midiPath, const char* wavPath, const char* presetName, const juce::StringArray& overrides);
+
+// A MIDI file's tempo map (its timestamps still in ticks), for playing it as a host following the
+// file would: the tempo and song position at any time. 120 BPM if the file has no tempo.
+class TempoMap
+{
+public:
+    explicit TempoMap (const juce::MidiFile& midi);
+
+    juce::AudioPlayHead::PositionInfo getPositionAt (double seconds) const;
+
+    // Where each tempo starts, the first at the start of the song.
+    struct Change
+    {
+        double seconds;
+        double quarterNotes;
+        double secondsPerQuarter;
+    };
+
+    const std::vector<Change>& getChanges() const noexcept { return changes; }
+
+private:
+    std::vector<Change> changes { { 0.0, 0.0, 0.5 } };
+};
 
 } // namespace testing

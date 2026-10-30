@@ -35,6 +35,20 @@ std::vector<float> readWav (const juce::File& file)
     return { buffer.getReadPointer (0), buffer.getReadPointer (0) + buffer.getNumSamples() };
 }
 
+// Writes a MIDI file of one track, timed at 96 ticks to the quarter note, into the folder.
+juce::File writeMidiFile (const juce::File& folder, const juce::MidiMessageSequence& track)
+{
+    juce::MidiFile midi;
+    midi.setTicksPerQuarterNote (96);
+    midi.addTrack (track);
+    const auto file = folder.getChildFile ("test.mid");
+    file.deleteFile();
+    juce::FileOutputStream stream (file);
+    midi.writeTo (stream);
+    stream.flush();
+    return file;
+}
+
 void testRenderToolPlaysTheMidiFile()
 {
     // A MIDI file at 100 BPM (96 ticks to the quarter note): two notes, a sixteenth apart, then off.
@@ -45,13 +59,7 @@ void testRenderToolPlaysTheMidiFile()
     track.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 80), 24.0);
     track.addEvent (juce::MidiMessage::noteOff (1, 45), 192.0);
     track.addEvent (juce::MidiMessage::noteOff (1, 57), 192.0);
-    juce::MidiFile midi;
-    midi.setTicksPerQuarterNote (96);
-    midi.addTrack (track);
-    const auto midiFile = temporary.folder.getChildFile ("test.mid");
-    juce::FileOutputStream stream (midiFile);
-    midi.writeTo (stream);
-    stream.flush();
+    const auto midiFile = writeMidiFile (temporary.folder, track);
 
     const auto wavFile = temporary.folder.getChildFile ("test.wav");
     const auto result = renderMidiFile (midiFile.getFullPathName().toRawUTF8(), wavFile.getFullPathName().toRawUTF8(), "Pluck Bass",
@@ -90,17 +98,155 @@ void testRenderToolPlaysTheMidiFile()
            "--render refuses a missing MIDI file, an unknown preset or an unknown parameter, writing nothing");
 }
 
+void testRenderToolWaitsForLongReleases()
+{
+    // One note, let go after a quarter at 100 BPM (0.6 s), with a 3 s release. The WAV carries on
+    // until the release has finished: the note is still sounding 2.5 s after it was let go, and
+    // silent by the end.
+    TemporaryFolder temporary;
+    juce::MidiMessageSequence track;
+    track.addEvent (juce::MidiMessage::tempoMetaEvent (600000), 0.0);
+    track.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0.0);
+    track.addEvent (juce::MidiMessage::noteOff (1, 57), 96.0);
+    const auto midiFile = writeMidiFile (temporary.folder, track);
+    const auto wavFile = temporary.folder.getChildFile ("test.wav");
+    renderMidiFile (midiFile.getFullPathName().toRawUTF8(), wavFile.getFullPathName().toRawUTF8(), "Init",
+                    juce::StringArray ("ampRelease=3"));
+    const auto rendered = readWav (wavFile);
+
+    constexpr double sampleRate = 44100.0;
+    auto loudestBetween = [&] (double from, double to)
+    {
+        float loudest = 0.0f;
+
+        for (auto i = (size_t) (from * sampleRate); i < std::min (rendered.size(), (size_t) (to * sampleRate)); ++i)
+            loudest = std::max (loudest, std::abs (rendered[i]));
+
+        return loudest;
+    };
+
+    const auto seconds = rendered.size() / sampleRate;
+    const auto lateInRelease = loudestBetween (3.0, 3.2);
+    const auto atTheEnd = loudestBetween (seconds - 0.1, seconds);
+    std::printf ("      rendered %.3f s; loudest 2.4 to 2.6 s after the note was let go %.4f, in the last 0.1 s %.1e\n",
+                 seconds, lateInRelease, atTheEnd);
+    check (seconds >= 3.6 && lateInRelease > 0.005f && atTheEnd == 0.0f,
+           "--render carries on until a long release has finished");
+}
+
+void testRenderToolFollowsTempoChanges()
+{
+    // A file at 100 BPM for four quarters (2.4 s), then 150 BPM: one note through both, with Chopped
+    // Chords, whose LFO is synced to the tempo. The WAV is what a host following the tempo map plays,
+    // reporting each tempo and the song's position, worked out here by hand.
+    TemporaryFolder temporary;
+    juce::MidiMessageSequence track;
+    track.addEvent (juce::MidiMessage::tempoMetaEvent (600000), 0.0);
+    track.addEvent (juce::MidiMessage::tempoMetaEvent (400000), 384.0);
+    track.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0.0);
+    track.addEvent (juce::MidiMessage::noteOff (1, 57), 768.0);
+    const auto midiFile = writeMidiFile (temporary.folder, track);
+    const auto wavFile = temporary.folder.getChildFile ("test.wav");
+    renderMidiFile (midiFile.getFullPathName().toRawUTF8(), wavFile.getFullPathName().toRawUTF8(), "Chopped Chords", {});
+    const auto rendered = readWav (wavFile);
+
+    constexpr double sampleRate = 44100.0;
+    const auto loadChoppedChords = [] (juce::AudioProcessor& p)
+    {
+        auto& presets = dynamic_cast<boringsynth::BoringSynthProcessor&> (p).getPresetManager();
+
+        for (int i = 0; i < presets.getNumFactoryPresets(); ++i)
+            if (presets.getFactoryPresetName (i) == "Chopped Chords")
+                presets.loadFactoryPreset (i);
+    };
+
+    const auto direct = render ({ .sampleRate = sampleRate,
+                                  .numSamples = (int) rendered.size(),
+                                  .events = { { 0, noteOn (57, 100) }, { juce::roundToInt (4.0 * sampleRate), noteOff (57) } },
+                                  .setUp = loadChoppedChords,
+                                  .transport = [] (int blockStart)
+                                  {
+                                      const auto seconds = blockStart / sampleRate;
+                                      juce::AudioPlayHead::PositionInfo position;
+                                      position.setBpm (seconds < 2.4 ? 100.0 : 150.0);
+                                      position.setPpqPosition (seconds < 2.4 ? seconds / 0.6 : 4.0 + (seconds - 2.4) / 0.4);
+                                      position.setIsPlaying (true);
+                                      return position;
+                                  } });
+
+    float largestDifference = rendered.size() == direct.size() ? 0.0f : 1.0f;
+
+    for (size_t i = 0; i < std::min (rendered.size(), direct.size()); ++i)
+        largestDifference = std::max (largestDifference, std::abs (rendered[i] - direct[i]));
+
+    std::printf ("      rendered %.3f s; largest difference from a host following the tempo map %.1e\n",
+                 rendered.size() / sampleRate, largestDifference);
+    check (largestDifference < 1.0e-6f, "--render follows the MIDI file's tempo changes, as a host would");
+}
+
 } // namespace
 
 void runRenderToolTests()
 {
     testRenderToolPlaysTheMidiFile();
+    testRenderToolWaitsForLongReleases();
+    testRenderToolFollowsTempoChanges();
+}
+
+TempoMap::TempoMap (const juce::MidiFile& midi)
+{
+    // Every tempo event in every track, by position in ticks, each the seconds per quarter note from
+    // there on. Without any, 120 BPM throughout. A file timed in SMPTE frames rather than ticks to the
+    // quarter note has no tempo either, so it gets 120 BPM too.
+    std::vector<std::pair<double, double>> tempoEvents;
+    const auto ticksPerQuarter = (double) midi.getTimeFormat();
+
+    if (ticksPerQuarter > 0.0)
+        for (int track = 0; track < midi.getNumTracks(); ++track)
+            for (const auto* event : *midi.getTrack (track))
+                if (event->message.isTempoMetaEvent())
+                    tempoEvents.emplace_back (event->message.getTimeStamp(), event->message.getTempoSecondsPerQuarterNote());
+
+    std::stable_sort (tempoEvents.begin(), tempoEvents.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+
+    for (const auto& [ticks, secondsPerQuarter] : tempoEvents)
+    {
+        const auto quarterNotes = ticks / ticksPerQuarter;
+        const auto& previous = changes.back();
+        const auto seconds = previous.seconds + (quarterNotes - previous.quarterNotes) * previous.secondsPerQuarter;
+
+        // A tempo event at the same place as the last one replaces it.
+        if (quarterNotes == previous.quarterNotes)
+            changes.back().secondsPerQuarter = secondsPerQuarter;
+        else
+            changes.push_back ({ seconds, quarterNotes, secondsPerQuarter });
+    }
+}
+
+juce::AudioPlayHead::PositionInfo TempoMap::getPositionAt (double seconds) const
+{
+    // The last change at or before this time.
+    auto change = changes.front();
+
+    for (const auto& each : changes)
+        if (each.seconds <= seconds)
+            change = each;
+
+    juce::AudioPlayHead::PositionInfo position;
+    position.setBpm (60.0 / change.secondsPerQuarter);
+    position.setPpqPosition (change.quarterNotes + (seconds - change.seconds) / change.secondsPerQuarter);
+    position.setIsPlaying (true);
+    return position;
 }
 
 int renderMidiFile (const char* midiPath, const char* wavPath, const char* presetName, const juce::StringArray& overrides)
 {
     constexpr double sampleRate = 44100.0;
-    constexpr double tailSeconds = 1.0; // after the last MIDI event, for releases to finish
+
+    // After the last MIDI event, for releases to finish: the plug-in's tail (its amp release), plus a
+    // little, and at least a second.
+    constexpr double minimumTailSeconds = 1.0;
+    constexpr double extraTailSeconds = 0.25;
 
     const auto midiFile = juce::File::getCurrentWorkingDirectory().getChildFile (midiPath);
     juce::FileInputStream input (midiFile);
@@ -112,18 +258,8 @@ int renderMidiFile (const char* midiPath, const char* wavPath, const char* prese
         return 1;
     }
 
-    // The host plays at the file's first tempo (120 BPM if it has none), from the start of the song.
-    double bpm = 120.0;
-
-    for (int track = 0; track < midi.getNumTracks(); ++track)
-        for (const auto* event : *midi.getTrack (track))
-            if (event->message.isTempoMetaEvent())
-            {
-                bpm = 60.0 / event->message.getTempoSecondsPerQuarterNote();
-                track = midi.getNumTracks() - 1;
-                break;
-            }
-
+    // The host follows the file's tempo map (120 BPM if it has none), from the start of the song.
+    const TempoMap tempoMap (midi);
     midi.convertTimestampTicksToSeconds();
     std::vector<TimedMessage> events;
     int lastEvent = 0;
@@ -158,25 +294,22 @@ int renderMidiFile (const char* midiPath, const char* wavPath, const char* prese
             return 1;
         }
 
+    const auto setUp = [presetIndex, overrides] (juce::AudioProcessor& p)
+    {
+        dynamic_cast<boringsynth::BoringSynthProcessor&> (p).getPresetManager().loadFactoryPreset (presetIndex);
+
+        for (const auto& change : overrides)
+            setParameter (p, change.upToFirstOccurrenceOf ("=", false, false), change.fromFirstOccurrenceOf ("=", false, false).getFloatValue());
+    };
+
+    setUp (*probe);
+    const auto tailSeconds = std::max (minimumTailSeconds, probe->getTailLengthSeconds() + extraTailSeconds);
+
     const auto output = render ({ .sampleRate = sampleRate,
                                   .numSamples = lastEvent + (int) (tailSeconds * sampleRate),
                                   .events = events,
-                                  .setUp = [presetIndex, overrides] (juce::AudioProcessor& p)
-                                  {
-                                      dynamic_cast<boringsynth::BoringSynthProcessor&> (p).getPresetManager().loadFactoryPreset (presetIndex);
-
-                                      for (const auto& change : overrides)
-                                          setParameter (p, change.upToFirstOccurrenceOf ("=", false, false),
-                                                        change.fromFirstOccurrenceOf ("=", false, false).getFloatValue());
-                                  },
-                                  .transport = [bpm] (int blockStart)
-                                  {
-                                      juce::AudioPlayHead::PositionInfo position;
-                                      position.setBpm (bpm);
-                                      position.setPpqPosition (blockStart / sampleRate * bpm / 60.0);
-                                      position.setIsPlaying (true);
-                                      return position;
-                                  } });
+                                  .setUp = setUp,
+                                  .transport = [&tempoMap] (int blockStart) { return tempoMap.getPositionAt (blockStart / sampleRate); } });
 
     // Mono, as 32-bit float, so nothing is lost to rounding.
     const auto wavFile = juce::File::getCurrentWorkingDirectory().getChildFile (wavPath);
@@ -197,8 +330,11 @@ int renderMidiFile (const char* midiPath, const char* wavPath, const char* prese
         return 1;
     }
 
-    std::printf ("rendered %d MIDI events at %.2f BPM with \"%s\"%s%s to %s (%.3f s)\n",
-                 (int) events.size(), bpm, presetName, overrides.isEmpty() ? "" : ", changed: ", overrides.joinIntoString (" ").toRawUTF8(),
+    const auto tempoChanges = (int) tempoMap.getChanges().size() - 1;
+    std::printf ("rendered %d MIDI events from %.2f BPM%s with \"%s\"%s%s to %s (%.3f s)\n",
+                 (int) events.size(), 60.0 / tempoMap.getChanges().front().secondsPerQuarter,
+                 tempoChanges > 0 ? (", with " + juce::String (tempoChanges) + (tempoChanges == 1 ? " tempo change" : " tempo changes")).toRawUTF8() : "",
+                 presetName, overrides.isEmpty() ? "" : ", changed: ", overrides.joinIntoString (" ").toRawUTF8(),
                  wavFile.getFullPathName().toRawUTF8(), output.size() / sampleRate);
     return 0;
 }

@@ -7,8 +7,10 @@ namespace boringsynth
 
 // Produces a waveform one sample at a time by reading a BandLimitedWaveTable. It holds only the
 // wave's phase; the caller decides the pitch on every sample by passing how far the phase moves,
-// which is how pitch bends glide. Each sample reads the table level that suits that pitch, so the
-// waveform never aliases.
+// which is how pitch bends glide. Each sample reads the table level that suits that pitch, so none of
+// the waveform's harmonics go past the Nyquist frequency. That's the aliasing that matters; reading
+// between a table's points along straight lines leaves faint errors of its own (about -118 dB for a
+// sine), and whatever comes after, such as the output's clipping, can add more.
 class Oscillator
 {
 public:

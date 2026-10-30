@@ -6,7 +6,7 @@ namespace boringsynth
 {
 
 // A waveform stored as a ladder of WaveTables, each with fewer high harmonics than the last, so that
-// any note can play without aliasing.
+// any note can play without its harmonics passing the Nyquist frequency.
 //
 // A harmonic above the Nyquist frequency (half the sample rate) can't be reproduced; it "folds back"
 // and is heard as a wrong, unrelated pitch. A high note has room for fewer harmonics below Nyquist

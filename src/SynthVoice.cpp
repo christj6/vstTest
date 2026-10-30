@@ -32,7 +32,8 @@ constexpr double filterSwitchSeconds = 0.01;
 
 // While the cutoff or resonance glides, the filter's coefficients are worked out again every this
 // many samples rather than every sample. That takes a tangent and a power, so this cuts the cost of
-// a moving filter several times over; 8 samples is under 0.2 ms, far too short to hear as steps.
+// a moving filter several times over. 8 samples is under 0.2 ms, and no steps have been heard; a
+// high resonance swept fast is where they'd show first, if anywhere.
 constexpr int filterUpdateInterval = 8;
 
 // The note at which key tracking leaves the cutoff exactly where the knob says: middle C. With key
@@ -204,7 +205,8 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // A change of waveform during the note fades in rather than switching abruptly.
     oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
 
-    // Envelope and filter knob moves apply to the note already playing.
+    // Envelope and filter knob moves apply to the note already playing, though a release already under
+    // way keeps the time it started with (see Envelope).
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
     filterEnvelope.setSettings (getFilterEnvelopeSettings());
     updateFilterTargets (startSample);
