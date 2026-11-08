@@ -1,13 +1,17 @@
 #pragma once
 
-#include "Waveforms.h"
-
 #include <juce_core/juce_core.h>
 
 namespace boringsynth
 {
 
-// The LFO's wave, one sample at a time, in one of the waveforms' shapes (positions in waveformNames).
+// The LFO's shapes, in the order the LFO Shape parameter lists them. A DAW saves the choice as its
+// position in this list, so the order is permanent: new shapes go at the end. They have the first four
+// waveforms' names, but the list is its own, as wavetables can be waveforms and can't be LFO shapes.
+inline const juce::StringArray lfoShapeNames { "Sine", "Triangle", "Saw", "Square" };
+constexpr int sineLfoShape = 0, triangleLfoShape = 1, sawLfoShape = 2, squareLfoShape = 3;
+
+// The LFO's wave, one sample at a time, in one of its shapes (positions in lfoShapeNames).
 //
 // Every shape runs from exactly -1 to 1 and starts at 0, rising. The sine and triangle are exact. The
 // saw's and square's jumps, which would click on the volume or the filter cutoff, become straight
@@ -93,17 +97,17 @@ public:
 
         switch (shape)
         {
-            case triangleWaveform:
+            case triangleLfoShape:
                 return (float) (std::abs (x) <= 0.5 * pi ? x / (0.5 * pi) : sign * (2.0 - std::abs (x) / (0.5 * pi)));
 
-            case sawWaveform:
+            case sawLfoShape:
                 // Rises from -1 to 1 over the whole cycle except the jump, then falls back.
                 if (distanceFromEnd < halfJump)
                     return (float) (sign * distanceFromEnd / halfJump);
 
                 return (float) (x / (pi - halfJump));
 
-            case squareWaveform:
+            case squareLfoShape:
                 // Rises through 0 at phase 0 and falls through it at pi, each over jumpWidth.
                 if (distanceFromEnd < halfJump)
                     return (float) (sign * distanceFromEnd / halfJump);
@@ -119,12 +123,12 @@ public:
     }
 
 private:
-    int shape = sineWaveform;
+    int shape = sineLfoShape;
     double phase = 0.0;
 
     // What's being faded out, while fadeRemaining is above 0: a wave carrying on in its old shape
     // from its old phase, or, if outgoingHeld, a value held steady.
-    int outgoingShape = sineWaveform;
+    int outgoingShape = sineLfoShape;
     double outgoingPhase = 0.0;
     bool outgoingHeld = false;
     float heldValue = 0.0f;

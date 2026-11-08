@@ -1,5 +1,6 @@
 #include "Parameters.h"
 
+#include "Lfo.h"
 #include "Waveforms.h"
 
 namespace boringsynth
@@ -224,12 +225,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                               lfoDestinationNames,
                                                               pitchDestination));
 
-    // The same shapes as Waveform, in the same permanent order. Sine, the LFO's only shape before
-    // this existed.
+    // lfoShapeNames' order is permanent. Sine, the LFO's only shape before this existed.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { lfoShapeId, 1 },
                                                               "LFO Shape",
-                                                              waveformNames,
-                                                              sineWaveform));
+                                                              lfoShapeNames,
+                                                              sineLfoShape));
 
     // With the mod wheel fully up, this much is added to LFO Depth. Defaults to 0 %, which ignores the
     // wheel: the behaviour before this existed.

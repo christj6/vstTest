@@ -352,6 +352,10 @@ void testLfoParameters()
     check (getParameter (*processor, "lfoShape") == 0.0f, "the LFO shape defaults to the first choice (sine)");
     check (shapesInOrder, "the LFO shapes are Sine, Triangle, Saw and Square, in that order");
 
+    // Only those: wavetables added to Waveform mustn't become LFO shapes.
+    auto* shapeChoice = dynamic_cast<juce::AudioParameterChoice*> (shape);
+    check (shapeChoice != nullptr && shapeChoice->choices.size() == expectedShapes.size(), "there are no other LFO shapes");
+
     // Spelled out on purpose, like the IDs above.
     auto* modWheel = findParameter (*processor, "modWheelLfoDepth");
     check (modWheel != nullptr, "parameter ID 'modWheelLfoDepth' exists");

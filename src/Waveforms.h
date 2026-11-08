@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BandLimitedWaveTable.h"
+#include "MultiFrameWaveTable.h"
 
 #include <juce_core/juce_core.h>
 
@@ -20,7 +20,7 @@ float waveformShape (int waveform, double phase);
 // the sine's RMS (average power). The sine itself is unchanged.
 float waveformGain (int waveform);
 
-// A band-limited table for every waveform, built once when the plug-in loads and shared by every
+// A table of a single frame for every waveform, built once when the plug-in loads and shared by every
 // voice.
 class WaveformTables
 {
@@ -28,10 +28,10 @@ public:
     WaveformTables();
 
     // The table for a waveform's position in waveformNames. Out-of-range values give the sine.
-    const BandLimitedWaveTable& get (int waveform) const noexcept;
+    const MultiFrameWaveTable& get (int waveform) const noexcept;
 
 private:
-    std::vector<BandLimitedWaveTable> tables;
+    std::vector<MultiFrameWaveTable> tables;
 };
 
 } // namespace boringsynth

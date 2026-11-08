@@ -1,5 +1,6 @@
 #include "FactoryPresets.h"
 
+#include "Lfo.h"
 #include "Parameters.h"
 #include "Waveforms.h"
 
@@ -59,7 +60,7 @@ const std::vector<FactoryPreset>& getFactoryPresets()
         { "Chopped Chords", { { waveformId, (float) sawWaveform },
                               { ampReleaseId, 0.3f },
                               { filterEnabledId, 1.0f }, { filterCutoffId, 2500.0f },
-                              { lfoDestinationId, (float) volumeDestination }, { lfoShapeId, (float) squareWaveform },
+                              { lfoDestinationId, (float) volumeDestination }, { lfoShapeId, (float) squareLfoShape },
                               { lfoDepthId, 100.0f }, { lfoSyncId, 1.0f }, { lfoSyncRateId, 13.0f }, { lfoRetriggerId, 1.0f } } },
 
         // A pure sine for deep bass under other sounds: no harmonics to buzz, held while the key is

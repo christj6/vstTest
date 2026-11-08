@@ -1,26 +1,26 @@
 #pragma once
 
-#include "BandLimitedWaveTable.h"
+#include "MultiFrameWaveTable.h"
 
 namespace boringsynth
 {
 
-// Produces a waveform one sample at a time by reading a BandLimitedWaveTable. It holds only the
-// wave's phase; the caller decides the pitch on every sample by passing how far the phase moves,
-// which is how pitch bends glide. Each sample reads the table level that suits that pitch, so none of
-// the waveform's harmonics go past the Nyquist frequency. That's the aliasing that matters; reading
-// between a table's points along straight lines leaves faint errors of its own (about -118 dB for a
-// sine), and whatever comes after, such as the output's clipping, can add more.
+// Produces a waveform one sample at a time by reading the first frame of a MultiFrameWaveTable. It
+// holds only the wave's phase; the caller decides the pitch on every sample by passing how far the
+// phase moves, which is how pitch bends glide. Each sample reads the table level that suits that
+// pitch, so none of the waveform's harmonics go past the Nyquist frequency. That's the aliasing that
+// matters; reading between a table's points along straight lines leaves faint errors of its own
+// (about -118 dB for a sine), and whatever comes after, such as the output's clipping, can add more.
 class Oscillator
 {
 public:
     // Tables must outlive the oscillator. They're shared, so the oscillator never changes them.
-    explicit Oscillator (const BandLimitedWaveTable& waveTable) : table (&waveTable) {}
+    explicit Oscillator (const MultiFrameWaveTable& waveTable) : table (&waveTable) {}
 
     // Switches to another waveform. With crossfadeSamples of 0 it switches at once, which is right
     // when a note starts. Otherwise it fades from the old waveform to the new one over that many
     // samples, reading both at the same phase, so a change during a note doesn't click.
-    void setTable (const BandLimitedWaveTable& newTable, int crossfadeSamples) noexcept
+    void setTable (const MultiFrameWaveTable& newTable, int crossfadeSamples) noexcept
     {
         if (&newTable == table)
             return;
@@ -46,7 +46,7 @@ public:
         if (phaseDelta >= juce::MathConstants<double>::pi)
             return 0.0f;
 
-        auto sample = table->getTableFor (phaseDelta).getSample (phase);
+        auto sample = table->getFrame (0).getTableFor (phaseDelta).getSample (phase);
 
         if (previousTable != nullptr)
         {
@@ -58,7 +58,7 @@ public:
             else
             {
                 const auto progress = (float) (fadeLength - fadeRemaining) / (float) fadeLength;
-                const auto previousSample = previousTable->getTableFor (phaseDelta).getSample (phase);
+                const auto previousSample = previousTable->getFrame (0).getTableFor (phaseDelta).getSample (phase);
                 sample = previousSample + progress * (sample - previousSample);
             }
         }
@@ -72,8 +72,8 @@ public:
     }
 
 private:
-    const BandLimitedWaveTable* table;
-    const BandLimitedWaveTable* previousTable = nullptr; // the waveform being faded out, if any
+    const MultiFrameWaveTable* table;
+    const MultiFrameWaveTable* previousTable = nullptr; // the waveform being faded out, if any
     int fadeLength = 0;    // samples the current crossfade lasts
     int fadeRemaining = 0; // samples of it still to go
     double phase = 0.0;

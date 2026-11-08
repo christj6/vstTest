@@ -389,7 +389,7 @@ double SynthVoice::getBendRatio() const
     return std::exp2 (bendPosition * parameters.pitchBendRange.load() / 12.0);
 }
 
-const BandLimitedWaveTable& SynthVoice::getCurrentTable() const
+const MultiFrameWaveTable& SynthVoice::getCurrentTable() const
 {
     return tables.get (juce::roundToInt (parameters.waveform.load()));
 }

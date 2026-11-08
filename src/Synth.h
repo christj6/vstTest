@@ -2,7 +2,6 @@
 
 #include "Lfo.h"
 #include "Parameters.h"
-#include "Waveforms.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -55,7 +54,7 @@ struct LfoParameters
     const std::atomic<float>& rate;          // Hz
     const std::atomic<float>& depth;         // 0 to 100 %
     const std::atomic<float>& destination;   // position in lfoDestinationNames
-    const std::atomic<float>& shape;         // position in waveformNames
+    const std::atomic<float>& shape;         // position in lfoShapeNames
     const std::atomic<float>& modWheelDepth; // 0 to 100 %, added to depth with the wheel fully up
     const std::atomic<float>& retrigger;     // 0 (free-running) or 1 (restarted by every note)
     const std::atomic<float>& sync;          // 0 (rate in Hz) or 1 (rate as a note length at the tempo)

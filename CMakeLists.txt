@@ -20,6 +20,8 @@ set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FactoryPresets.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Filter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Lfo.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MultiFrameWaveTable.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/MultiFrameWaveTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Oscillator.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parameters.h

@@ -59,7 +59,7 @@ WaveformTables::WaveformTables()
     }
 }
 
-const BandLimitedWaveTable& WaveformTables::get (int waveform) const noexcept
+const MultiFrameWaveTable& WaveformTables::get (int waveform) const noexcept
 {
     return tables[(size_t) (juce::isPositiveAndBelow (waveform, (int) tables.size()) ? waveform : sineWaveform)];
 }

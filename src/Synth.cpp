@@ -188,7 +188,7 @@ float Synth::getLfoDepthTarget() const
 
 int Synth::getCurrentShape() const
 {
-    return juce::jlimit (0, waveformNames.size() - 1, juce::roundToInt (parameters.shape.load()));
+    return juce::jlimit (0, lfoShapeNames.size() - 1, juce::roundToInt (parameters.shape.load()));
 }
 
 int Synth::getCurrentDestination() const

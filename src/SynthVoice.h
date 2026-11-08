@@ -137,7 +137,7 @@ private:
     int getCurrentFilterType() const;
     float getFilterCutoffTarget() const;
     double getBendRatio() const;
-    const BandLimitedWaveTable& getCurrentTable() const;
+    const MultiFrameWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;
     Envelope::Settings getFilterEnvelopeSettings() const;
 };

@@ -30,17 +30,20 @@ const boringsynth::WaveTable& plainSineTable()
     return table;
 }
 
-const boringsynth::BandLimitedWaveTable& bandLimitedSine()
+const boringsynth::MultiFrameWaveTable& sineTable()
 {
-    static const boringsynth::BandLimitedWaveTable table { sine };
+    static const boringsynth::MultiFrameWaveTable table { sine };
     return table;
 }
 
-const boringsynth::BandLimitedWaveTable& bandLimitedSawtooth()
+const boringsynth::MultiFrameWaveTable& sawtoothTable()
 {
-    static const boringsynth::BandLimitedWaveTable table { sawtooth };
+    static const boringsynth::MultiFrameWaveTable table { sawtooth };
     return table;
 }
+
+const boringsynth::BandLimitedWaveTable& bandLimitedSine() { return sineTable().getFrame (0); }
+const boringsynth::BandLimitedWaveTable& bandLimitedSawtooth() { return sawtoothTable().getFrame (0); }
 
 // The samples a table holds, read back at their exact positions.
 std::vector<float> samplesOf (const boringsynth::WaveTable& table)
@@ -191,7 +194,7 @@ double loudestAlias (const std::vector<float>& output)
 }
 
 // The aliasing test note played by an oscillator.
-std::vector<float> playAliasTestNote (const boringsynth::BandLimitedWaveTable& table)
+std::vector<float> playAliasTestNote (const boringsynth::MultiFrameWaveTable& table)
 {
     boringsynth::Oscillator oscillator (table);
     std::vector<float> output (aliasTestLength);
@@ -214,7 +217,7 @@ void testNoAliasing()
         phase = std::fmod (phase + aliasTestPhaseDelta, juce::MathConstants<double>::twoPi);
     }
 
-    const auto bandLimitedAlias = loudestAlias (playAliasTestNote (bandLimitedSawtooth()));
+    const auto bandLimitedAlias = loudestAlias (playAliasTestNote (sawtoothTable()));
     const auto unlimitedAlias = loudestAlias (unlimited);
     std::printf ("      5 kHz sawtooth: loudest alias %.1f dB below the fundamental band-limited, "
                  "%.1f dB without band-limiting\n", -bandLimitedAlias, -unlimitedAlias);
@@ -229,7 +232,7 @@ void testOscillatorMatchesSine()
 
     for (auto frequency : { 20.0, 440.0, 5000.0, 15000.0, 23000.0 })
     {
-        boringsynth::Oscillator oscillator (bandLimitedSine());
+        boringsynth::Oscillator oscillator (sineTable());
         const auto phaseDelta = juce::MathConstants<double>::twoPi * frequency / 48000.0;
         double referencePhase = 0.0;
 
@@ -252,8 +255,8 @@ void testOscillatorAtNyquist()
 {
     // At or above Nyquist the oscillator is silent and its phase holds still, so afterwards it
     // carries on exactly where it would have.
-    boringsynth::Oscillator steady (bandLimitedSine());
-    boringsynth::Oscillator interrupted (bandLimitedSine());
+    boringsynth::Oscillator steady (sineTable());
+    boringsynth::Oscillator interrupted (sineTable());
 
     for (int i = 0; i < 3; ++i)
     {
@@ -287,7 +290,7 @@ void testWaveformLoudness()
 
     for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
     {
-        const auto rms = rmsOf (samplesOf (waveformTables().get (waveform).getLevel (0)));
+        const auto rms = rmsOf (samplesOf (waveformTables().get (waveform).getFrame (0).getLevel (0)));
         std::printf ("      %-8s RMS %.4f (%+.2f dB from the sine)\n", waveformName (waveform), rms, toDecibels (rms / sineRms));
         worstDifference = std::max (worstDifference, std::abs (toDecibels (rms / sineRms)));
     }
@@ -302,7 +305,7 @@ void testWaveformsStartAtZero()
 
     for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
         for (int level = 0; level < boringsynth::BandLimitedWaveTable::numLevels; ++level)
-            largest = std::max (largest, (double) std::abs (waveformTables().get (waveform).getLevel (level).getSample (0.0)));
+            largest = std::max (largest, (double) std::abs (waveformTables().get (waveform).getFrame (0).getLevel (level).getSample (0.0)));
 
     std::printf ("      largest value at phase 0, any waveform and level: %.2e\n", largest);
     check (largest < 1.0e-5, "every waveform starts at zero, so notes start without a click");
@@ -329,7 +332,7 @@ void testWaveformShapes()
                 continue;
 
             const auto ideal = boringsynth::waveformGain (waveform) * boringsynth::waveformShape (waveform, phase);
-            largestError = std::max (largestError, (double) std::abs (waveformTables().get (waveform).getLevel (0).getSample (phase) - ideal));
+            largestError = std::max (largestError, (double) std::abs (waveformTables().get (waveform).getFrame (0).getLevel (0).getSample (phase) - ideal));
         }
 
         std::printf ("      %-8s largest difference from its ideal shape %.4f\n", waveformName (waveform), largestError);
@@ -389,6 +392,97 @@ void testCrossfadeBetweenTables()
     check (exactAfterFade, "after the crossfade the output is exactly the new waveform");
 }
 
+//==============================================================================
+// Three frames different enough that one read in place of another can't pass: a sine, a sawtooth, and
+// a sine two octaves up.
+float threeFrameShape (int frame, double phase)
+{
+    return frame == 0 ? sine (phase) : frame == 1 ? sawtooth (phase) : sine (4.0 * phase);
+}
+
+const boringsynth::MultiFrameWaveTable& threeFrameTable()
+{
+    static const boringsynth::MultiFrameWaveTable table { 3, threeFrameShape };
+    return table;
+}
+
+// Whether every level of two band-limited tables holds exactly the same samples.
+bool sameLevels (const boringsynth::BandLimitedWaveTable& a, const boringsynth::BandLimitedWaveTable& b)
+{
+    for (int level = 0; level < boringsynth::BandLimitedWaveTable::numLevels; ++level)
+        if (samplesOf (a.getLevel (level)) != samplesOf (b.getLevel (level)))
+            return false;
+
+    return true;
+}
+
+void testFramesAreBandLimitedSeparately()
+{
+    check (threeFrameTable().getNumFrames() == 3, "a table of three frames has three frames");
+
+    // Each frame should be exactly what its shape gives band-limited on its own, at every level.
+    bool allSame = true;
+
+    for (int frame = 0; frame < 3; ++frame)
+    {
+        const boringsynth::BandLimitedWaveTable alone { [frame] (double phase) { return threeFrameShape (frame, phase); } };
+        allSame = allSame && sameLevels (threeFrameTable().getFrame (frame), alone);
+    }
+
+    check (allSame, "every frame holds its own shape, band-limited on its own");
+    check (! sameLevels (threeFrameTable().getFrame (0), threeFrameTable().getFrame (1))
+               && ! sameLevels (threeFrameTable().getFrame (0), threeFrameTable().getFrame (2)),
+           "(the frames do differ, so the check above means something)");
+}
+
+void testSingleFrameTable()
+{
+    const boringsynth::BandLimitedWaveTable alone { sawtooth };
+    check (sawtoothTable().getNumFrames() == 1, "a table made from one shape has one frame");
+    check (sameLevels (sawtoothTable().getFrame (0), alone), "its frame is that shape, band-limited");
+}
+
+void testWaveformsAreSingleFrames()
+{
+    bool allSingle = true;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+        allSingle = allSingle && waveformTables().get (waveform).getNumFrames() == 1;
+
+    check (allSingle, "every waveform is a table of one frame");
+}
+
+void testOscillatorReadsFirstFrame()
+{
+    // Nothing moves through the frames yet, so a table of several plays its first, the same as that
+    // frame's shape alone. At a low pitch and a high one, as each reads a different level.
+    double largestDifference = 0.0;
+
+    for (auto phaseDelta : { 0.01, 1.0 })
+    {
+        boringsynth::Oscillator several (threeFrameTable());
+        boringsynth::Oscillator first (sineTable());
+
+        for (int i = 0; i < 4096; ++i)
+            largestDifference = std::max (largestDifference, (double) std::abs (several.getNextSample (phaseDelta) - first.getNextSample (phaseDelta)));
+    }
+
+    std::printf ("      three-frame table vs its first frame alone: largest difference %.2e\n", largestDifference);
+    check (largestDifference == 0.0, "the oscillator plays a table's first frame");
+
+    // And a crossfade away from it fades out that frame.
+    boringsynth::Oscillator several (threeFrameTable());
+    boringsynth::Oscillator first (sineTable());
+    several.setTable (sawtoothTable(), 100);
+    first.setTable (sawtoothTable(), 100);
+    double largestFadeDifference = 0.0;
+
+    for (int i = 0; i < 200; ++i)
+        largestFadeDifference = std::max (largestFadeDifference, (double) std::abs (several.getNextSample (0.05) - first.getNextSample (0.05)));
+
+    check (largestFadeDifference == 0.0, "a crossfade away from a table fades out its first frame");
+}
+
 } // namespace
 
 void runOscillatorTests()
@@ -406,6 +500,10 @@ void runOscillatorTests()
     testWaveformShapes();
     testWaveformsDontAlias();
     testCrossfadeBetweenTables();
+    testFramesAreBandLimitedSeparately();
+    testSingleFrameTable();
+    testWaveformsAreSingleFrames();
+    testOscillatorReadsFirstFrame();
 }
 
 } // namespace testing
