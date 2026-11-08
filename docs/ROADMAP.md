@@ -24,12 +24,17 @@ Along the way, the test tools also gained a reference render (`--record` / `--co
 ## Next
 
 **Phase 8: Full wavetables.** Milestone: a wavetable synth.
-- 28. Multi-frame tables and a Position control.
-- 29. A built-in wavetable library.
-- 30. Modulating Position from envelopes and the LFO.
-- 31. A wavetable display.
-- 32. Importing wavetables from `.wav` files, loaded and band-limited on a background thread.
-- 33. Optional: a modulation matrix.
+- 28a. A multi-frame table class: a stack of cycles, each with its own band-limited levels. The sound stays bit-for-bit the same. Waveform and LFO Shape stop sharing `waveformNames`, as only Waveform gains wavetables; the first four positions stay as they are.
+- 28b. A Position parameter that blends neighbouring frames, and one test wavetable (sine morphing into saw). Benchmark it, as blending doubles the table reads. Listen for brightness jumps at band-limit levels as Position sweeps, and crossfade between levels only if they're audible. A stolen voice's fading note keeps its frames and Position.
+- 29. A built-in wavetable library, generated from formulas (no third-party files), of 64 frames or fewer per table, as each frame takes about 90 KB. Every frame starts at zero, like the other waveforms. A few new presets, added at the end.
+- 30a. Position as a new LFO destination, added at the end of the list.
+- 30b. A dedicated third envelope for Position on each note: its attack, decay, sustain, release and amount.
+- 31. A wavetable display showing the current frame and Position.
+- 32a. Importing wavetables from `.wav` files, loaded and band-limited on a background thread. Imported frames get DC removal and a short fade-in at note start, as they may not start at zero. The new table reaches the audio thread through a lock-free handover, and the old one is freed off the audio thread, once no fading note can still be reading it.
+- 32b. Imported tables saved with projects and presets, their audio embedded (about 2 MB for 256 frames), so moving or deleting the file can't break a project. A state that can't be read gives a clear result.
+- 33. Optional: a modulation matrix. Decide after 30b.
+
+**Decided for this phase:** wavetables go at the end of the existing Waveform menu, with the four basic waves treated as single-frame tables, on which Position does nothing; Position gets its own envelope rather than sharing the filter's, so the two can move separately; and imported audio is embedded rather than saved as a file path.
 
 **Phase 9: Ready to ship**
 - 34. Steinberg's VST3 validator; pluginval and the tests on every push (GitHub Actions); several DAWs; CPU measurement at 16 voices; installers and signed releases.
