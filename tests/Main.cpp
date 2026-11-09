@@ -1,5 +1,7 @@
 #include "TestHelpers.h"
 
+#include "Waveforms.h"
+
 // With no arguments, runs every test. With --record <file> or --compare <file> [tolerance in dBFS],
 // records or compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
 // plug-in's speed instead (see Benchmark.cpp). With --snapshot <file> [display scale], draws the
@@ -10,6 +12,10 @@
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInitialiser;
+
+    // Kept for the whole run, as a host keeping a copy of the plug-in loaded would. Otherwise every test's
+    // plug-in, being the only copy, would build the tables again.
+    const juce::SharedResourcePointer<boringsynth::WaveformTables> tables;
 
     if (argc == 3 && juce::String (argv[1]) == "--record")
         return testing::recordReference (argv[2]);

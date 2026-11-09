@@ -1,5 +1,6 @@
 #include "TestHelpers.h"
 
+#include "BoringSynthProcessor.h"
 #include "Oscillator.h"
 #include "Waveforms.h"
 
@@ -193,6 +194,19 @@ double loudestAlias (const std::vector<float>& output)
     return toDecibels (loudest / harmonics[aliasTestCycles]);
 }
 
+// The same, in dB below full scale: for a wave with little or no fundamental left at that pitch.
+double loudestAliasLevel (const std::vector<float>& output)
+{
+    const auto harmonics = harmonicsOf (output);
+    double loudest = 0.0;
+
+    for (size_t k = 1; k < harmonics.size(); ++k)
+        if (k % aliasTestCycles != 0)
+            loudest = std::max (loudest, harmonics[k]);
+
+    return toDecibels (loudest);
+}
+
 // The aliasing test note played by an oscillator.
 std::vector<float> playAliasTestNote (const boringsynth::MultiFrameWaveTable& table)
 {
@@ -336,7 +350,7 @@ void testWaveformShapes()
     // where band-limiting necessarily rounds the corner and rings a little.
     double worst = 0.0;
 
-    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    for (int waveform = 0; waveform < boringsynth::firstWavetable; ++waveform)
     {
         double largestError = 0.0;
 
@@ -616,6 +630,163 @@ void testSineToSawDoesntAlias()
     check (worst < -80.0, "Sine to Saw has no audible aliasing at a high note, at any position");
 }
 
+//==============================================================================
+// One cycle of a table at a position and level.
+std::vector<float> cycleAt (const boringsynth::MultiFrameWaveTable& table, float position, int level)
+{
+    std::vector<float> samples ((size_t) boringsynth::WaveTable::size);
+
+    for (int i = 0; i < boringsynth::WaveTable::size; ++i)
+        samples[(size_t) i] = table.getSample (position, level, juce::MathConstants<double>::twoPi * i / boringsynth::WaveTable::size);
+
+    return samples;
+}
+
+void testWavetableLibrary()
+{
+    const auto sineRms = 1.0 / std::sqrt (2.0);
+    bool allHaveFrames = true, framesDiffer = true;
+    int totalFrames = 0;
+    double worstLoudness = 0.0, worstStart = 0.0, worstAlias = -1000.0, worstPeak = 0.0;
+
+    // Past the end of the tables, asking for a waveform gives the sine.
+    const auto lastHasATable = &waveformTables().get (boringsynth::waveformNames.size() - 1) != &waveformTables().get (boringsynth::sineWaveform);
+
+    for (int waveform = boringsynth::firstWavetable; waveform < boringsynth::waveformNames.size(); ++waveform)
+    {
+        const auto& table = waveformTables().get (waveform);
+        const auto numFrames = table.getNumFrames();
+        totalFrames += numFrames;
+        allHaveFrames = allHaveFrames && numFrames > 1 && numFrames <= 64;
+
+        // Between frames as well as on them, 8 steps to each gap.
+        const auto numSteps = (numFrames - 1) * 8;
+        double loudness = 0.0, peak = 0.0, alias = -1000.0;
+
+        for (int step = 0; step <= numSteps; ++step)
+        {
+            const auto position = (float) step / (float) numSteps;
+            const auto cycle = cycleAt (table, position, 0);
+            loudness = std::max (loudness, std::abs (toDecibels (rmsOf (cycle) / sineRms)));
+
+            for (auto sample : cycle)
+                peak = std::max (peak, (double) std::abs (sample));
+        }
+
+        for (int step = 0; step <= 8; ++step)
+        {
+            boringsynth::Oscillator oscillator (table);
+            std::vector<float> output (aliasTestLength);
+
+            for (auto& sample : output)
+                sample = oscillator.getNextSample (aliasTestPhaseDelta, (float) step / 8.0f);
+
+            alias = std::max (alias, loudestAliasLevel (output));
+        }
+
+        double atStart = 0.0;
+
+        for (int frame = 0; frame < numFrames; ++frame)
+            for (int level = 0; level < boringsynth::BandLimitedWaveTable::numLevels; ++level)
+                atStart = std::max (atStart, (double) std::abs (table.getFrame (frame).getLevel (level).getSample (0.0)));
+
+        framesDiffer = framesDiffer && samplesOf (table.getFrame (0).getLevel (0)) != samplesOf (table.getFrame (numFrames - 1).getLevel (0));
+
+        std::printf ("      %-13s %2d frames: loudness within %.2f dB, peak %.2f, at phase 0 %.1e, alias %.1f dB\n",
+                     waveformName (waveform), numFrames, loudness, peak, atStart, -alias);
+
+        worstLoudness = std::max (worstLoudness, loudness);
+        worstPeak = std::max (worstPeak, peak);
+        worstStart = std::max (worstStart, atStart);
+        worstAlias = std::max (worstAlias, alias);
+    }
+
+    std::printf ("      %d frames in all, about %.1f MB\n", totalFrames, totalFrames * 11 * 2049 * 4 / 1.0e6);
+
+    const auto start = juce::Time::getMillisecondCounterHiRes();
+    boringsynth::WaveformTables built;
+    std::printf ("      building every table: %.0f ms\n", juce::Time::getMillisecondCounterHiRes() - start);
+
+    check (lastHasATable, "there's a table for every waveform name");
+    check (allHaveFrames, "every wavetable has several frames, 64 at most");
+    check (framesDiffer, "every wavetable's first and last frames differ");
+    check (worstLoudness < 0.5, "every wavetable stays within 0.5 dB of the sine's loudness at every position");
+    check (worstPeak < 3.0, "no wavetable's peak is more than 3 times the sine's");
+    check (worstStart < 1.0e-5, "every frame of every wavetable starts at zero, at every level");
+    check (worstAlias < -80.0, "no wavetable has audible aliasing at a high note, at any position");
+}
+
+void testWavetablesAreWhatTheirNamesSay()
+{
+    // Each table's harmonics at its first and last frames (index 1 is the fundamental), so a table
+    // can't end up under the wrong name, each compared to its strongest.
+    const auto harmonicsAt = [] (int waveform, float position)
+    {
+        auto harmonics = harmonicsOf (cycleAt (waveformTables().get (waveform), position, 0));
+        harmonics[0] = 0.0;
+        const auto strongest = *std::max_element (harmonics.begin(), harmonics.end());
+
+        for (auto& harmonic : harmonics)
+            harmonic /= strongest;
+
+        return harmonics;
+    };
+
+    const auto strongestHarmonic = [] (const std::vector<double>& harmonics)
+    {
+        return (int) std::distance (harmonics.begin(), std::max_element (harmonics.begin(), harmonics.end()));
+    };
+
+    const auto largestEven = [] (const std::vector<double>& harmonics)
+    {
+        double largest = 0.0;
+
+        for (size_t k = 2; k < 64; k += 2)
+            largest = std::max (largest, harmonics[k]);
+
+        return largest;
+    };
+
+    using namespace boringsynth;
+
+    const auto pulseStart = harmonicsAt (pulseWidthWaveform, 0.0f), pulseEnd = harmonicsAt (pulseWidthWaveform, 1.0f);
+    check (largestEven (pulseStart) < 1.0e-3 && std::abs (pulseStart[3] - 1.0 / 3.0) < 0.01 && largestEven (pulseEnd) > 0.1,
+           "Pulse Width starts as a square, with no even harmonics, and gains them as it narrows");
+
+    const auto syncStart = harmonicsAt (hardSyncWaveform, 0.0f), syncEnd = harmonicsAt (hardSyncWaveform, 1.0f);
+    check (syncStart[2] < 1.0e-3 && syncStart[3] < 1.0e-3 && strongestHarmonic (syncEnd) == 8,
+           "Hard Sync starts as a sine, and ends strongest at harmonic 8");
+
+    const auto sweepStart = harmonicsAt (fmSweepWaveform, 0.0f), sweepEnd = harmonicsAt (fmSweepWaveform, 1.0f);
+    check (sweepStart[2] < 1.0e-3 && sweepStart[3] < 1.0e-3 && largestEven (sweepEnd) > 0.1,
+           "FM Sweep starts as a sine, and gains even harmonics too");
+
+    const auto hollowStart = harmonicsAt (fmHollowWaveform, 0.0f), hollowEnd = harmonicsAt (fmHollowWaveform, 1.0f);
+    check (hollowStart[3] < 1.0e-3 && largestEven (hollowEnd) < 1.0e-3 && hollowEnd[5] > 0.1,
+           "FM Hollow starts as a sine, and gains only odd harmonics");
+
+    const auto foldStart = harmonicsAt (wavefoldWaveform, 0.0f), foldEnd = harmonicsAt (wavefoldWaveform, 1.0f);
+    check (foldStart[3] < 0.01 && largestEven (foldEnd) < 1.0e-3 && strongestHarmonic (foldEnd) > 3,
+           "Wavefold starts as nearly a sine, and ends with odd harmonics stronger than the fundamental");
+
+    const auto formantStart = harmonicsAt (formantWaveform, 0.0f), formantEnd = harmonicsAt (formantWaveform, 1.0f);
+    check (strongestHarmonic (formantStart) == 1 && strongestHarmonic (formantEnd) >= 10 && strongestHarmonic (formantEnd) <= 14,
+           "Formant's hump of harmonics slides from the fundamental to around harmonic 12");
+
+    const auto harmonicsStart = harmonicsAt (harmonicsWaveform, 0.0f), harmonicsEnd = harmonicsAt (harmonicsWaveform, 1.0f);
+    check (strongestHarmonic (harmonicsStart) == 1 && harmonicsStart[2] < 1.0e-3 && strongestHarmonic (harmonicsEnd) == 8 && harmonicsEnd[7] < 1.0e-3,
+           "Harmonics goes from the fundamental alone to harmonic 8 alone");
+}
+
+void testEveryCopySharesTheTables()
+{
+    std::unique_ptr<juce::AudioProcessor> first (createPluginFilter()), second (createPluginFilter());
+    auto* a = dynamic_cast<boringsynth::BoringSynthProcessor*> (first.get());
+    auto* b = dynamic_cast<boringsynth::BoringSynthProcessor*> (second.get());
+    check (a != nullptr && b != nullptr && &a->getWaveformTables() == &b->getWaveformTables(),
+           "every copy of the plug-in reads the same tables");
+}
+
 void testOscillatorReadsFirstFrame()
 {
     // By default the oscillator reads a table's first frame, the same as that frame's shape alone. At a
@@ -672,6 +843,9 @@ void runOscillatorTests()
     testOscillatorReadsAtPosition();
     testSineToSawFrames();
     testSineToSawDoesntAlias();
+    testWavetableLibrary();
+    testWavetablesAreWhatTheirNamesSay();
+    testEveryCopySharesTheTables();
     testOscillatorReadsFirstFrame();
 }
 

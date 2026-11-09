@@ -67,7 +67,34 @@ const std::vector<FactoryPreset>& getFactoryPresets()
         // down, fading over 120 ms when it's released. A little quieter when played softly.
         { "Sub Bass", { { waveformId, (float) sineWaveform },
                         { ampReleaseId, 0.12f },
-                        { velocitySensitivityId, 30.0f } } } };
+                        { velocitySensitivityId, 30.0f } } },
+
+        // Odd harmonics only, for a woody, clarinet-like tone, with a gentle vibrato.
+        { "Hollow Reed", { { waveformId, (float) fmHollowWaveform }, { wavetablePositionId, 25.0f },
+                           { ampAttackId, 0.03f }, { ampReleaseId, 0.12f },
+                           { lfoRateId, 5.0f }, { lfoDepthId, 8.0f },
+                           { velocitySensitivityId, 40.0f } } },
+
+        // A bright, tearing sync sound that dies away, with its filter closing behind it.
+        { "Sync Stab", { { waveformId, (float) hardSyncWaveform }, { wavetablePositionId, 45.0f },
+                         { ampDecayId, 0.35f }, { ampSustainId, 30.0f }, { ampReleaseId, 0.15f },
+                         { filterEnabledId, 1.0f }, { filterCutoffId, 1200.0f }, { filterResonanceId, 20.0f },
+                         { filterDecayId, 0.3f }, { filterSustainId, 0.0f }, { filterEnvAmountId, 3.0f },
+                         { velocitySensitivityId, 50.0f } } },
+
+        // A slow swell with a vowel-like hump of harmonics, moving gently with the vibrato.
+        { "Vowel Pad", { { waveformId, (float) formantWaveform }, { wavetablePositionId, 50.0f },
+                         { ampAttackId, 0.5f }, { ampDecayId, 0.5f }, { ampSustainId, 85.0f }, { ampReleaseId, 1.0f },
+                         { lfoRateId, 4.5f }, { lfoDepthId, 10.0f },
+                         { velocitySensitivityId, 30.0f } } },
+
+        // A few folds of a sine for a thick, buzzy bass, its filter snapping shut.
+        { "Folded Bass", { { waveformId, (float) wavefoldWaveform }, { wavetablePositionId, 20.0f },
+                           { ampReleaseId, 0.08f },
+                           { filterEnabledId, 1.0f }, { filterCutoffId, 400.0f }, { filterResonanceId, 25.0f },
+                           { filterKeyTrackingId, 50.0f },
+                           { filterDecayId, 0.25f }, { filterSustainId, 15.0f }, { filterEnvAmountId, 3.0f },
+                           { velocitySensitivityId, 50.0f } } } };
 
     return presets;
 }

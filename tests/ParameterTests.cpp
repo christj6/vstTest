@@ -136,13 +136,14 @@ void testWaveformParameter()
 
     // A DAW saves the choice by position, so the list must keep this order forever. New waveforms
     // can only be added to the end.
-    const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square", "Sine to Saw" };
+    const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square", "Sine to Saw", "Pulse Width",
+                                       "Hard Sync", "FM Sweep", "FM Hollow", "Wavefold", "Formant", "Harmonics" };
     bool inOrder = true;
 
     for (int i = 0; i < expected.size(); ++i)
         inOrder = inOrder && waveform->getText (waveform->convertTo0to1 ((float) i), 20) == expected[i];
 
-    check (inOrder, "the waveform choices are Sine, Triangle, Saw, Square and Sine to Saw, in that order");
+    check (inOrder, "the waveform choices are the four basic waves, then the wavetables, in their permanent order");
 
     // Spelled out on purpose, like 'volume' above.
     auto* position = findParameter (*processor, "wavetablePosition");

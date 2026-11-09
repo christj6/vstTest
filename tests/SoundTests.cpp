@@ -70,6 +70,41 @@ void testSineToSawMorphs()
     check (std::abs (loudness) < 0.2, "Sine to Saw at Position 50 % is as loud as the sine");
 }
 
+void testWavetablesPlayThroughThePlugIn()
+{
+    // Every wavetable, at three positions: as loud as the sine, and not all the same sound.
+    const auto sineRms = rmsBetween (render ({ .events = heldNote }), 4800, 48000);
+    double worst = 0.0;
+    bool positionsDiffer = true;
+
+    for (int waveform = sineToSaw; waveform < 12; ++waveform)
+    {
+        const auto start = render ({ .events = heldNote, .setUp = withPosition (waveform, 0.0f) });
+        const auto end = render ({ .events = heldNote, .setUp = withPosition (waveform, 100.0f) });
+        const auto middle = render ({ .events = heldNote, .setUp = withPosition (waveform, 37.0f) });
+
+        for (const auto* rendered : { &start, &middle, &end })
+            worst = std::max (worst, std::abs (toDecibels (rmsBetween (*rendered, 4800, 48000) / sineRms)));
+
+        positionsDiffer = positionsDiffer && largestDifference (start, end) > 0.01 && largestDifference (start, middle) > 0.01;
+    }
+
+    std::printf ("      every wavetable at A4, three positions: at most %.2f dB from the sine\n", worst);
+    check (worst < 1.0, "every wavetable plays within 1 dB of the sine's loudness at A4");
+    check (positionsDiffer, "every wavetable sounds different at different positions");
+
+    // A wave whose energy is in its higher harmonics loses it on high notes, as they pass Nyquist. How
+    // much is reported here, and in DESIGN.md.
+    const std::vector<TimedMessage> highNote { { 0, noteOn (96) } };
+    const auto highSine = rmsBetween (render ({ .events = highNote }), 4800, 48000);
+
+    for (int waveform = sineToSaw; waveform < 12; ++waveform)
+    {
+        const auto end = render ({ .events = highNote, .setUp = withPosition (waveform, 100.0f) });
+        std::printf ("      waveform %2d at C7, Position 100 %%: %+.1f dB from the sine\n", waveform, toDecibels (rmsBetween (end, 4800, 48000) / highSine));
+    }
+}
+
 void testPositionGlides()
 {
     // Moved from 0 % to 100 % at the start of a block, Position should take 20 ms (960 samples) to get
@@ -826,6 +861,7 @@ void runSoundTests()
     testNoteAfterWaveformChangeStartsDirectly();
     testPositionLeavesSingleFramesAlone();
     testSineToSawMorphs();
+    testWavetablesPlayThroughThePlugIn();
     testPositionGlides();
     testNoteStartsAtPosition();
     testPositionDoesntDependOnBlockSize();

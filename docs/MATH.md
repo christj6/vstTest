@@ -67,7 +67,7 @@ Aliased tones land at frequencies unrelated to the note, so they sound wrong: me
 
 ## 4. Wave tables and band-limiting
 
-*`WaveTable.h`, `BandLimitedWaveTable.cpp`, `MultiFrameWaveTable.h`, `Waveforms.cpp`*
+*`WaveTable.h`, `BandLimitedWaveTable.cpp`, `MultiFrameWaveTable.h`, `Waveforms.cpp`, `WavetableLibrary.cpp`*
 
 ### Reading a wave from a table
 
@@ -117,7 +117,7 @@ and the note reads the richest level whose limit is no more than that. For A4 at
 
 The levels halve, so a note may lose up to half the harmonics that would fit: A4 misses harmonics 33 to 54 (14.5 to 23.8 kHz). That's the price of a small ladder. Those harmonics are faint (a saw's 40th is $\tfrac{1}{40}$ of its fundamental, −32 dB) and at the top of hearing.
 
-Each frame's ladder (see below) costs 11 levels × 2,049 samples × 4 bytes, about 90 KB. The four basic waveforms and Sine to Saw's eight frames come to about 1 MB, built once and shared by every voice.
+Each frame's ladder (see below) costs 11 levels × 2,049 samples × 4 bytes, about 90 KB. The four basic waveforms and the wavetables' 168 frames come to about 15 MB, built once and shared by every voice of every copy of the plug-in.
 
 ### Overshoot at the jumps
 
@@ -136,6 +136,20 @@ Sine to Saw's $F = 8$ frames are a straight blend of the sine and the loudness-m
 $$y_f(\varphi) = g_f\,\bigl(\sin\varphi + a\,(\sqrt{1.5}\,\text{saw}(\varphi) - \sin\varphi)\bigr)$$
 
 Each frame's gain $g_f$ scales it to the sine's RMS. The two ends aren't independent (they share a fundamental), so a blend is a little quieter than either: about 0.5 dB midway without $g_f$.
+
+The other wavetables are also scaled frame by frame like this. With $a$ from 0 at the first frame to 1 at the last, and $x$ the phase measured from $-\pi$ to $\pi$:
+
+| Wavetable | Frames | One frame, before scaling |
+|---|---|---|
+| Pulse Width | 16 | $\operatorname{sign} x$ where $\lvert x \rvert < \pi (1 - \tfrac{7}{8} a)$, otherwise 0 |
+| Hard Sync | 32 | $\sin\bigl((1 + 7a)\,x\bigr)$ |
+| FM Sweep | 16 | $\sin(\varphi + 6a \sin \varphi)$ |
+| FM Hollow | 16 | $\sin(\varphi + 6a \sin 2\varphi)$: its sidebands land only on odd harmonics |
+| Wavefold | 32 | $\sin\bigl((0.1 + 11.9a) \sin \varphi\bigr)$ |
+| Formant | 16 | $\sum_{n=1}^{48} \pm e^{-(\log_2 n - c)^2 / 0.5} \sin n\varphi$, with $c = a \log_2 12$ and the sign changing every two harmonics, which keeps its peak down |
+| Harmonics | 32 | $\sqrt{1-t}\,\sin k\varphi + \sqrt{t}\,\sin (k+1)\varphi$, with $k + t = 1 + 7a$ |
+
+Each is odd in $\varphi$, so it's a sum of sines alone: zero at $\varphi = 0$, with no DC offset.
 
 ## 5. Making the waveforms equally loud: RMS
 

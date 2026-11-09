@@ -117,6 +117,33 @@ void testFactoryPresetsAreValid()
     check (factory.size() > 1 && juce::String (factory.front().name) == "Init" && factory.front().settings.empty(),
            "the first factory preset is Init, which leaves every parameter at its default");
     check (problems.isEmpty(), "every factory preset has its own name, and sets only real parameters, within their ranges");
+
+    // Hosts save a project's program by its position, so the order is permanent. Spelled out on purpose.
+    check (names == juce::StringArray { "Init", "Soft Pad", "Pluck Bass", "Squelch", "Tremolo Organ", "Wobble Bass", "Vibrato Lead",
+                                        "Chopped Chords", "Sub Bass", "Hollow Reed", "Sync Stab", "Vowel Pad", "Folded Bass" },
+           "the factory presets are in their permanent order, new ones at the end");
+}
+
+void testWavetablePresets()
+{
+    // Each is on a wavetable, away from its first frame, and plays.
+    bool allRight = true;
+
+    for (int index = 9; index <= 12; ++index)
+    {
+        auto synth = createSynth();
+        synth->getPresetManager().loadFactoryPreset (index);
+        const auto output = render ({ .numSamples = 48000, .events = heldNote,
+                                      .setUp = [index] (juce::AudioProcessor& p)
+                                      {
+                                          dynamic_cast<boringsynth::BoringSynthProcessor&> (p).getPresetManager().loadFactoryPreset (index);
+                                      } });
+        const auto level = rmsOf (std::vector<float> (output.begin() + 24000, output.end()));
+        std::printf ("      %s: RMS %.4f\n", boringsynth::getFactoryPresets()[(size_t) index].name, level);
+        allRight = allRight && getParameter (*synth, "waveform") >= 4.0f && getParameter (*synth, "wavetablePosition") > 0.0f && level > 0.005;
+    }
+
+    check (allRight, "the wavetable presets are on a wavetable, away from its first frame, and play");
 }
 
 void testInitSoundsLikeANewPlugIn()
@@ -397,7 +424,7 @@ void testSubBass()
         if (juce::String (boringsynth::getFactoryPresets()[(size_t) i].name) == "Sub Bass")
             subBass = i;
 
-    check (subBass == (int) boringsynth::getFactoryPresets().size() - 1, "Sub Bass is the last factory preset, so the others keep their positions");
+    check (subBass == 8, "Sub Bass is still the ninth factory preset");
 
     auto withPreset = [] (int index)
     {
@@ -423,6 +450,7 @@ void testSubBass()
 void runPresetTests()
 {
     testFactoryPresetsAreValid();
+    testWavetablePresets();
     testInitSoundsLikeANewPlugIn();
     testFactoryPresetSetsItsSettings();
     testUserPresetRoundTrip();

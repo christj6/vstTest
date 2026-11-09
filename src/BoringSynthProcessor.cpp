@@ -82,7 +82,7 @@ BoringSynthProcessor::BoringSynthProcessor()
                                             .filterEnvAmount = *filterEnvAmount };
 
     for (int i = 0; i < numVoices; ++i)
-        synth.addVoice (new SynthVoice (waveformTables, synth.getModulation(), voiceParameters));
+        synth.addVoice (new SynthVoice (*waveformTables, synth.getModulation(), voiceParameters));
 
     synth.addSound (new SynthSound());
 
