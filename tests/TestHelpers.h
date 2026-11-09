@@ -222,8 +222,8 @@ void runReferenceRenderTests();
 int runBenchmark();
 
 // Draws the plug-in's window to a PNG file (EditorTests.cpp), at displayScale pixels per point (2 to see
-// it as a 200 % Windows display shows it). Returns the program's exit code.
-int saveEditorSnapshot (const char* path, float displayScale);
+// it as a 200 % Windows display shows it), on a factory preset, if named. Returns the program's exit code.
+int saveEditorSnapshot (const char* path, float displayScale, const juce::String& presetName);
 
 // Plays a MIDI file through the plug-in with a factory preset, changed by any "parameterId=value"
 // overrides, to a WAV file (RenderTool.cpp), for as long as its notes and the plug-in's release

@@ -45,6 +45,7 @@ constexpr int cellHeight = 100;
 constexpr int labelHeight = 18;
 constexpr int valueBoxHeight = 18;
 constexpr int menuHeight = 24;
+constexpr int displayGap = 4; // between the Waveform menu and the picture under it
 constexpr int groupTitleHeight = 22;
 constexpr int groupPadding = 8;
 constexpr int gap = 10; // between groups, and around the edge
@@ -66,11 +67,13 @@ constexpr int noUserPresetsItemId = 1000;
 } // namespace
 
 BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state,
-                                      PresetManager& presetManager, std::atomic<float>& windowScale)
+                                      PresetManager& presetManager, std::atomic<float>& windowScale, const WaveformTables& tables,
+                                      const std::atomic<float>& playedPosition)
     : AudioProcessorEditor (processor),
       parameters (state),
       presets (presetManager),
-      scale (windowScale)
+      scale (windowScale),
+      wavetableDisplay (tables, *state.getRawParameterValue (waveformId), *state.getRawParameterValue (wavetablePositionId), playedPosition)
 {
     presetLabel.setText ("Preset", juce::dontSendNotification);
     addAndMakeVisible (presetLabel);
@@ -98,6 +101,8 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
 
         groups.push_back (std::move (group));
     }
+
+    addAndMakeVisible (wavetableDisplay);
 
     for (int row = 0; row < numRows; ++row)
         normalWidth = std::max (normalWidth, getRowWidth (row));
@@ -346,7 +351,13 @@ void BoringSynthEditor::resized()
             {
                 place (control->label, area.removeFromTop (labelHeight));
 
-                if (control->comboBoxAttachment != nullptr)
+                // The Waveform menu has the picture of the waveform under it, in the rest of its cell.
+                if (control->component->getComponentID() == waveformId)
+                {
+                    place (*control->component, area.removeFromTop (menuHeight));
+                    place (wavetableDisplay, area.withTrimmedTop (displayGap));
+                }
+                else if (control->comboBoxAttachment != nullptr)
                     place (*control->component, area.withSizeKeepingCentre (area.getWidth(), menuHeight));
                 else
                     place (*control->component, area);

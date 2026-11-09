@@ -4,9 +4,9 @@
 
 // With no arguments, runs every test. With --record <file> or --compare <file> [tolerance in dBFS],
 // records or compares the reference render instead (see ReferenceRender.cpp). With --benchmark, measures the
-// plug-in's speed instead (see Benchmark.cpp). With --snapshot <file> [display scale], draws the
+// plug-in's speed instead (see Benchmark.cpp). With --snapshot <file> [display scale] [preset], draws the
 // plug-in's window to a PNG file, to look at without a DAW, as a display at that scale (2 for 200 %)
-// would show it (see EditorTests.cpp). With --render <midi file> <wav file>
+// would show it, on that factory preset if given (see EditorTests.cpp). With --render <midi file> <wav file>
 // <preset> [parameterId=value ...], plays a MIDI file through the plug-in with a factory preset,
 // changed by any overrides (see RenderTool.cpp).
 int main (int argc, char** argv)
@@ -27,8 +27,8 @@ int main (int argc, char** argv)
     if (argc == 2 && juce::String (argv[1]) == "--benchmark")
         return testing::runBenchmark();
 
-    if ((argc == 3 || argc == 4) && juce::String (argv[1]) == "--snapshot")
-        return testing::saveEditorSnapshot (argv[2], argc == 4 ? juce::String (argv[3]).getFloatValue() : 1.0f);
+    if (argc >= 3 && argc <= 5 && juce::String (argv[1]) == "--snapshot")
+        return testing::saveEditorSnapshot (argv[2], argc >= 4 ? juce::String (argv[3]).getFloatValue() : 1.0f, argc == 5 ? argv[4] : "");
 
     if (argc >= 5 && juce::String (argv[1]) == "--render")
     {
@@ -43,7 +43,7 @@ int main (int argc, char** argv)
     if (argc != 1)
     {
         std::printf ("usage: Tests [--record <file> | --compare <file> [tolerance in dBFS] | --benchmark\n"
-                     "              | --snapshot <file> [display scale]\n"
+                     "              | --snapshot <file> [display scale] [preset]\n"
                      "              | --render <midi file> <wav file> <preset> [parameterId=value ...]]\n");
         return 1;
     }

@@ -22,6 +22,8 @@
 namespace boringsynth
 {
 
+class SynthVoice;
+
 class BoringSynthProcessor  : public juce::AudioProcessor
 {
 public:
@@ -59,6 +61,10 @@ public:
     PresetManager& getPresetManager() noexcept { return presets; }
 
     const WaveformTables& getWaveformTables() const noexcept { return *waveformTables; }
+
+    // Where in a wavetable's frames the newest note playing has got to, from 0 to 1, or negative with no
+    // note playing. Updated with every block, and safe to read from any thread.
+    float getPlayedPosition() const noexcept { return playedPosition.load(); }
 
 private:
     // Declared before the synth, so they outlive the voices that read them. Shared with every other
@@ -109,6 +115,12 @@ private:
                     .sync = *lfoSync,
                     .syncRate = *lfoSyncRate } };
 
+    // The synth's voices, which it owns, for reading where the newest note has got to without taking
+    // the synth's lock. Filled when the plug-in loads, and never changed.
+    std::vector<SynthVoice*> voices;
+
+    std::atomic<float> playedPosition { -1.0f }; // see getPlayedPosition
+
     // How big the editor's window is drawn (1 is its normal size), kept here so the window reopens at
     // the same size and the project remembers it. Not a parameter, and not saved in presets.
     std::atomic<float> editorScale { 1.0f };
@@ -119,6 +131,7 @@ private:
 
     float getVolumeGain() const;
     int getUserPresetProgram() const;
+    void publishPlayedPosition() noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BoringSynthProcessor)
 };

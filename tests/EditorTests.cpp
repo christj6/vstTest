@@ -1,6 +1,8 @@
 #include "TestHelpers.h"
 
 #include "BoringSynthProcessor.h"
+#include "FactoryPresets.h"
+#include "WavetableDisplay.h"
 
 #include <map>
 
@@ -241,13 +243,215 @@ void testPositionGreyedOutWithoutAWavetable()
     check (greyedAtFirst && enabledOnWavetable && greyedOnSquare, "Position and its envelope are greyed out unless the waveform is a wavetable");
 }
 
+//==============================================================================
+// The picture of the waveform.
+
+juce::Image drawnDisplay (boringsynth::WavetableDisplay& display)
+{
+    display.refresh();
+    return display.createComponentSnapshot (display.getLocalBounds());
+}
+
+// How many pixels differ between two pictures of the same size.
+int pixelsDiffering (const juce::Image& a, const juce::Image& b)
+{
+    int differing = 0;
+
+    for (int y = 0; y < a.getHeight(); ++y)
+        for (int x = 0; x < a.getWidth(); ++x)
+            if (a.getPixelAt (x, y) != b.getPixelAt (x, y))
+                ++differing;
+
+    return differing;
+}
+
+// The row of a column of a picture nearest the curve's colour (the only strong blue in the picture).
+int curveRow (const juce::Image& image, int column)
+{
+    int bestRow = 0;
+
+    for (int y = 0; y < image.getHeight(); ++y)
+        if (image.getPixelAt (column, y).getBlue() > image.getPixelAt (column, bestRow).getBlue())
+            bestRow = y;
+
+    return bestRow;
+}
+
+void testDisplayDrawsTheWaveform()
+{
+    OpenEditor open;
+    auto* display = open.control<boringsynth::WavetableDisplay> ("wavetableDisplay");
+
+    if (display == nullptr)
+    {
+        check (false, "the window has a picture of the waveform");
+        return;
+    }
+
+    // A sine, by default: its peak a quarter of the way across, near the top, and its trough three
+    // quarters of the way, near the bottom.
+    const auto sine = drawnDisplay (*display);
+    const auto peakRow = curveRow (sine, sine.getWidth() / 4), troughRow = curveRow (sine, 3 * sine.getWidth() / 4);
+    std::printf ("      a sine %d rows high: its peak at row %d, its trough at row %d\n", sine.getHeight(), peakRow, troughRow);
+    check (peakRow < sine.getHeight() / 5 && troughRow > sine.getHeight() * 4 / 5, "the picture draws one cycle, right way up, filling its height");
+
+    setParameter (*open.processor, "wavetablePosition", 80.0f);
+    check (pixelsDiffering (sine, drawnDisplay (*display)) == 0, "on a waveform of one frame, Position doesn't change the picture");
+
+    setParameter (*open.processor, "waveform", 2.0f);
+    check (pixelsDiffering (sine, drawnDisplay (*display)) > 50, "the picture follows the waveform");
+
+    setParameter (*open.processor, "waveform", 4.0f);
+    setParameter (*open.processor, "wavetablePosition", 0.0f);
+    const auto atStart = drawnDisplay (*display);
+    setParameter (*open.processor, "wavetablePosition", 100.0f);
+    const auto atEnd = drawnDisplay (*display);
+    check (pixelsDiffering (atStart, atEnd) > 50, "on a wavetable, the picture follows Position");
+    check (display->getShownWaveform() == 4 && display->getShownPosition() == 1.0f, "it shows the waveform and position set");
+
+    // The marker along the bottom: at the left at 0 %, at the right at 100 %.
+    const auto markerRow = atStart.getHeight() - 3;
+    check (atStart.getPixelAt (3, markerRow).getBlue() > atStart.getPixelAt (atStart.getWidth() - 4, markerRow).getBlue()
+               && atEnd.getPixelAt (atEnd.getWidth() - 4, markerRow).getBlue() > atEnd.getPixelAt (3, markerRow).getBlue(),
+           "on a wavetable, a marker along the bottom shows the position");
+}
+
+void testDisplayScaleCoversEveryFrame()
+{
+    // Every table's peak is the loudest sample in any frame, so the curve can't leave the picture.
+    const juce::SharedResourcePointer<boringsynth::WaveformTables> tables;
+    bool allCovered = true, allFit = true;
+
+    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    {
+        const auto& table = tables->get (waveform);
+        const auto peak = boringsynth::WavetableDisplay::getPeak (table);
+        auto loudest = 0.0f;
+
+        for (int step = 0; step <= 100; ++step)
+            for (int i = 0; i < 512; ++i)
+                loudest = std::max (loudest, std::abs (table.getSample ((float) step / 100.0f, 0, juce::MathConstants<double>::twoPi * i / 512.0)));
+
+        allCovered = allCovered && loudest <= peak + 1.0e-5f;
+        allFit = allFit && peak < 3.0f && loudest > peak * 0.8f;
+    }
+
+    check (allCovered, "the picture's scale covers every position of every table");
+    check (allFit, "and doesn't leave the curve small");
+}
+
+void testPlayedPosition()
+{
+    // Through the processor: the note's Position with its envelope, then the newest of two notes', then
+    // nothing once they've finished.
+    std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+    auto& synth = dynamic_cast<boringsynth::BoringSynthProcessor&> (*processor);
+    setParameter (*processor, "waveform", 4.0f);
+    setParameter (*processor, "wavetablePosition", 10.0f);
+    setParameter (*processor, "positionEnvAmount", 80.0f);
+    setParameter (*processor, "positionDecay", 1.0f);
+    setParameter (*processor, "positionSustain", 0.0f);
+    processor->prepareToPlay (testSampleRate, 512);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    const auto playBlocks = [&] (int numBlocks, const juce::MidiMessage& first)
+    {
+        for (int i = 0; i < numBlocks; ++i)
+        {
+            juce::MidiBuffer midi;
+
+            if (i == 0)
+                midi.addEvent (first, 0);
+
+            processor->processBlock (buffer, midi);
+        }
+    };
+
+    check (synth.getPlayedPosition() < 0.0f, "before any note, there's no played position");
+
+    // The envelope falls from 1 to 0 over 48000 samples, and reads its last at sample 511 of each block.
+    const auto expectedAfter = [] (int samples) { return 0.1f + 0.8f * (1.0f - (float) (samples - 1) / 48000.0f); };
+
+    playBlocks (20, noteOn (60));
+    const auto afterFirst = synth.getPlayedPosition();
+    playBlocks (20, noteOn (64));
+    const auto afterSecond = synth.getPlayedPosition();
+    std::printf ("      played position: %.4f after one note (expected %.4f), %.4f on the second (expected %.4f)\n",
+                 afterFirst, expectedAfter (20 * 512), afterSecond, expectedAfter (20 * 512));
+    check (std::abs (afterFirst - expectedAfter (20 * 512)) < 1.0e-3f, "the played position is the note's, with its envelope");
+    check (std::abs (afterSecond - expectedAfter (20 * 512)) < 1.0e-3f, "with two notes, it's the newest one's");
+
+    playBlocks (1, noteOff (64));
+    playBlocks (1, noteOff (60));
+    playBlocks (5, controller (120, 0));
+    check (synth.getPlayedPosition() < 0.0f, "once every note has finished, there's no played position");
+}
+
+void testDisplayFollowsThePlayedNote()
+{
+    // Held at full, from a knob at 10 %, the envelope puts the note's Position at 90 %. The picture should
+    // show that while the note plays, and go back to the knob when it stops.
+    OpenEditor open;
+    auto* display = open.control<boringsynth::WavetableDisplay> ("wavetableDisplay");
+
+    if (display == nullptr)
+    {
+        check (false, "the window has a picture of the waveform");
+        return;
+    }
+
+    setParameter (*open.processor, "waveform", 4.0f);
+    setParameter (*open.processor, "wavetablePosition", 10.0f);
+    setParameter (*open.processor, "positionEnvAmount", 80.0f);
+    setParameter (*open.processor, "positionSustain", 100.0f);
+    open.processor->prepareToPlay (testSampleRate, 512);
+
+    display->refresh();
+    const auto beforeNote = display->getShownPosition();
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    midi.addEvent (noteOn (60), 0);
+    open.processor->processBlock (buffer, midi);
+    display->refresh();
+    const auto duringNote = display->getShownPosition();
+
+    midi.clear();
+    midi.addEvent (noteOff (60), 0);
+    open.processor->processBlock (buffer, midi);
+
+    for (int i = 0; i < 5; ++i)
+    {
+        midi.clear();
+        open.processor->processBlock (buffer, midi);
+    }
+
+    display->refresh();
+    const auto afterNote = display->getShownPosition();
+    std::printf ("      picture's position: %.3f before a note, %.3f during it, %.3f after it\n", beforeNote, duringNote, afterNote);
+    check (std::abs (beforeNote - 0.1f) < 1.0e-5f && std::abs (afterNote - 0.1f) < 1.0e-5f, "with no note playing, the picture shows the knob's position");
+    check (std::abs (duringNote - 0.9f) < 1.0e-5f, "while a note plays, the picture shows where the note is");
+
+    // And it notices by itself, on its timer. JUCE's timer thread can wait a while for a message loop,
+    // which there isn't here, so this gives it a couple of seconds.
+    setParameter (*open.processor, "wavetablePosition", 60.0f);
+
+    for (int waited = 0; waited < 2000 && std::abs (display->getShownPosition() - 0.6f) >= 1.0e-5f; waited += 10)
+    {
+        juce::Thread::sleep (10);
+        juce::Timer::callPendingTimersSynchronously();
+    }
+
+    check (std::abs (display->getShownPosition() - 0.6f) < 1.0e-5f, "the picture keeps itself up to date");
+}
+
 void testControlsFitAndDontOverlap()
 {
     // At the normal size, the smallest and the largest. Bounds in the window, as drawn, scaled.
     OpenEditor open;
     const auto normalWidth = open.editor->getWidth();
     const auto normalHeight = open.editor->getHeight();
-    std::vector<juce::Component*> controls { open.control ("presetMenu"), open.control ("savePreset") };
+    std::vector<juce::Component*> controls { open.control ("presetMenu"), open.control ("savePreset"), open.control ("wavetableDisplay") };
 
     for (auto* parameter : open.processor->getParameters())
         if (auto* control = open.control (dynamic_cast<juce::RangedAudioParameter*> (parameter)->getParameterID()))
@@ -457,6 +661,10 @@ void runEditorTests()
     testKnobsShowTheParametersText();
     testSyncGreysOutTheRateNotInUse();
     testPositionGreyedOutWithoutAWavetable();
+    testDisplayDrawsTheWaveform();
+    testDisplayScaleCoversEveryFrame();
+    testPlayedPosition();
+    testDisplayFollowsThePlayedNote();
     testControlsFitAndDontOverlap();
     testRowsLineUp();
     testWindowScales();
@@ -464,9 +672,24 @@ void runEditorTests()
     testPresetMenu();
 }
 
-int saveEditorSnapshot (const char* path, float displayScale)
+int saveEditorSnapshot (const char* path, float displayScale, const juce::String& presetName)
 {
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+
+    if (presetName.isNotEmpty())
+    {
+        const auto& factory = boringsynth::getFactoryPresets();
+        const auto chosen = std::find_if (factory.begin(), factory.end(), [&] (const auto& preset) { return presetName == preset.name; });
+
+        if (chosen == factory.end())
+        {
+            std::printf ("there's no factory preset named %s\n", presetName.toRawUTF8());
+            return 1;
+        }
+
+        dynamic_cast<boringsynth::BoringSynthProcessor&> (*processor).getPresetManager().loadFactoryPreset ((int) std::distance (factory.begin(), chosen));
+    }
+
     auto* editor = processor->createEditorAndMakeActive();
 
     if (editor == nullptr)

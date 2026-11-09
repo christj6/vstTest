@@ -80,6 +80,9 @@ public:
     void renderNextBlock (juce::AudioBuffer<float>& buffer, int startSample, int numSamples) override;
     void setCurrentPlaybackSampleRate (double newRate) override;
 
+    // Where in a wavetable's frames the note last read, from 0 to 1, its envelope and the LFO included.
+    float getLastPosition() const noexcept { return lastPosition; }
+
 private:
     // A note that was cut off while still sounding: most often because the voice was stolen for a
     // new note when all voices were busy. Instead of stopping dead, which clicks, it carries on

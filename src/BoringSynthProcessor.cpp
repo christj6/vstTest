@@ -86,8 +86,13 @@ BoringSynthProcessor::BoringSynthProcessor()
                                             .filterRelease = *filterRelease,
                                             .filterEnvAmount = *filterEnvAmount };
 
+    voices.reserve ((size_t) numVoices);
+
     for (int i = 0; i < numVoices; ++i)
-        synth.addVoice (new SynthVoice (*waveformTables, synth.getModulation(), voiceParameters));
+    {
+        voices.push_back (new SynthVoice (*waveformTables, synth.getModulation(), voiceParameters));
+        synth.addVoice (voices.back());
+    }
 
     synth.addSound (new SynthSound());
 
@@ -108,7 +113,7 @@ void BoringSynthProcessor::prepareToPlay (double sampleRate, int)
 
 juce::AudioProcessorEditor* BoringSynthProcessor::createEditor()
 {
-    return new BoringSynthEditor (*this, parameters, presets, editorScale);
+    return new BoringSynthEditor (*this, parameters, presets, editorScale, *waveformTables, playedPosition);
 }
 
 bool BoringSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -123,9 +128,21 @@ void BoringSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     buffer.clear();
     synth.setTransport (readTransport (getPlayHead()));
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
+    publishPlayedPosition();
     volumeGain.setTargetValue (getVolumeGain());
     volumeGain.applyGain (buffer, buffer.getNumSamples());
     protectOutput (buffer);
+}
+
+void BoringSynthProcessor::publishPlayedPosition() noexcept
+{
+    const SynthVoice* newest = nullptr;
+
+    for (const auto* voice : voices)
+        if (voice->isVoiceActive() && (newest == nullptr || newest->wasStartedBefore (*voice)))
+            newest = voice;
+
+    playedPosition.store (newest != nullptr ? newest->getLastPosition() : -1.0f);
 }
 
 double BoringSynthProcessor::getTailLengthSeconds() const

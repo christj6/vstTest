@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PresetManager.h"
+#include "WavetableDisplay.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -17,13 +18,14 @@ namespace boringsynth
 // Oscillator, Position Envelope, Amp Envelope, Filter, Filter Envelope, LFO). Knobs for numbers, showing the parameter's
 // own value text; menus for choices; tick boxes for switches. Each control is connected to its
 // parameter by a JUCE parameter attachment, which keeps the two in step both ways, including when
-// the host automates the parameter. JUCE's own look: it's BoringSynth.
+// the host automates the parameter. JUCE's own look: it's BoringSynth. The one thing it draws itself is
+// a small picture of the waveform, under the Waveform menu (WavetableDisplay).
 //
 // The window can be resized from its corner, keeping its shape: everything is drawn bigger or
 // smaller, from 75 % to 200 %, rather than laid out differently. The project remembers the size.
 //
 // Each control's component ID is its parameter's ID, so tests can find them; the preset menu's is
-// "presetMenu" and the Save button's "savePreset".
+// "presetMenu", the Save button's "savePreset" and the picture's "wavetableDisplay".
 class BoringSynthEditor  : public juce::AudioProcessorEditor,
                            private juce::ChangeListener
 {
@@ -32,10 +34,12 @@ public:
     static constexpr float minScale = 0.75f;
     static constexpr float maxScale = 2.0f;
 
-    // parameters, presets and scale belong to the processor; all four must outlive the editor, as JUCE
-    // ensures for a processor's editor. The window opens at scale, and keeps it up to date when resized.
+    // parameters, presets, scale, tables and playedPosition belong to the processor, or outlive it; all
+    // must outlive the editor, as JUCE ensures for a processor's editor. The window opens at scale, and
+    // keeps it up to date when resized. See WavetableDisplay for the last two.
     BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& parameters,
-                       PresetManager& presets, std::atomic<float>& scale);
+                       PresetManager& presets, std::atomic<float>& scale, const WaveformTables& tables,
+                       const std::atomic<float>& playedPosition);
     ~BoringSynthEditor() override;
 
     void paint (juce::Graphics& g) override;
@@ -82,6 +86,7 @@ private:
     std::atomic<float>& scale;
     std::vector<std::unique_ptr<Control>> controls;
     std::vector<Group> groups;
+    WavetableDisplay wavetableDisplay;
 
     juce::Label presetLabel;
     PresetMenu presetMenu;
