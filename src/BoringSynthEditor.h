@@ -15,7 +15,7 @@ namespace boringsynth
 
 // The plug-in's window: a preset bar along the top (a menu of the factory presets and yours, and a
 // Save button), then every parameter as one of JUCE's standard controls, in labelled groups (Global,
-// Oscillator, Position Envelope, Amp Envelope, Filter, Filter Envelope, LFO). Knobs for numbers, showing the parameter's
+// Oscillator, Amp Envelope, Position Envelope, Filter Envelope, Filter, LFO). Knobs for numbers, showing the parameter's
 // own value text; menus for choices; tick boxes for switches. Each control is connected to its
 // parameter by a JUCE parameter attachment, which keeps the two in step both ways, including when
 // the host automates the parameter. JUCE's own look: it's BoringSynth. The one thing it draws itself is

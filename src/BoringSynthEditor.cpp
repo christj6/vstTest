@@ -24,14 +24,14 @@ const std::vector<GroupLayout>& getLayout()
     static const std::vector<GroupLayout> layout {
         { "Global", 0, { { volumeId, "Volume" }, { velocitySensitivityId, "Velocity" }, { pitchBendRangeId, "Bend Range" } } },
         { "Oscillator", 0, { { waveformId, "Waveform" }, { wavetablePositionId, "Position" } } },
-        { "Position Envelope", 0, { { positionAttackId, "Attack" }, { positionDecayId, "Decay" }, { positionSustainId, "Sustain" },
-                                    { positionReleaseId, "Release" }, { positionEnvAmountId, "Amount" } } },
         { "Amp Envelope", 0, { { ampAttackId, "Attack" }, { ampDecayId, "Decay" }, { ampSustainId, "Sustain" }, { ampReleaseId, "Release" } } },
-        { "Filter", 1, { { filterEnabledId, "On" }, { filterTypeId, "Type" }, { filterCutoffId, "Cutoff" },
-                         { filterResonanceId, "Resonance" }, { filterKeyTrackingId, "Key Track" }, { filterVelocityId, "Velocity" } } },
+        { "Position Envelope", 1, { { positionAttackId, "Attack" }, { positionDecayId, "Decay" }, { positionSustainId, "Sustain" },
+                                    { positionReleaseId, "Release" }, { positionEnvAmountId, "Amount" } } },
         { "Filter Envelope", 1, { { filterAttackId, "Attack" }, { filterDecayId, "Decay" }, { filterSustainId, "Sustain" },
                                   { filterReleaseId, "Release" }, { filterEnvAmountId, "Amount" } } },
-        { "LFO", 2, { { lfoRateId, "Rate" }, { lfoSyncId, "Sync" }, { lfoSyncRateId, "Sync Rate" }, { lfoDepthId, "Depth" },
+        { "Filter", 2, { { filterEnabledId, "On" }, { filterTypeId, "Type" }, { filterCutoffId, "Cutoff" },
+                         { filterResonanceId, "Resonance" }, { filterKeyTrackingId, "Key Track" }, { filterVelocityId, "Velocity" } } },
+        { "LFO", 3, { { lfoRateId, "Rate" }, { lfoSyncId, "Sync" }, { lfoSyncRateId, "Sync Rate" }, { lfoDepthId, "Depth" },
                       { modWheelLfoDepthId, "Mod Wheel" }, { lfoDestinationId, "Destination" }, { lfoShapeId, "Shape" },
                       { lfoRetriggerId, "Retrigger" } } } };
     return layout;
@@ -49,7 +49,7 @@ constexpr int displayGap = 4; // between the Waveform menu and the picture under
 constexpr int groupTitleHeight = 22;
 constexpr int groupPadding = 8;
 constexpr int gap = 10; // between groups, and around the edge
-constexpr int numRows = 3;
+constexpr int numRows = 4;
 
 constexpr int groupHeight = groupTitleHeight + cellHeight + groupPadding;
 

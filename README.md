@@ -4,7 +4,7 @@ A minimal VST3 instrument plug-in. Press a key and it plays a waveform (sine, tr
 
 It has thirty-three parameters. The plug-in's window shows them all, and your DAW can show them in its own controls too. All of them can be automated and are saved with your project. Drag the window's bottom-right corner to make it bigger or smaller (75 % to 200 %); your project remembers its size.
 
-![The BoringSynth window: a preset menu and Save button along the top, then Global, Oscillator, Position Envelope, Amp Envelope, Filter, Filter Envelope and LFO groups of knobs, menus and tick boxes](docs/editor.png)
+![The BoringSynth window: a preset menu and Save button along the top, then Global, Oscillator, Amp Envelope, Position Envelope, Filter Envelope, Filter and LFO groups of knobs, menus and tick boxes](docs/editor.png)
 
 Under the Waveform menu, a small picture shows one cycle of the waveform. On a wavetable, a marker along its bottom shows the position: while a note plays, where the newest note has got to, its envelope and the LFO included, and otherwise the Position knob's.
 

@@ -489,7 +489,7 @@ void testRowsLineUp()
             rowEnds[group->getY()] = std::max (rowEnds[group->getY()], group->getRight());
 
     juce::String ends;
-    bool lineUp = rowEnds.size() == 3;
+    bool lineUp = rowEnds.size() == 4;
 
     for (const auto& [top, end] : rowEnds)
     {
