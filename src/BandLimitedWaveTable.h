@@ -27,7 +27,10 @@ public:
 
     // The richest level with no harmonics at or above the Nyquist frequency, for a note whose phase
     // moves by phaseDelta radians per sample (2 pi times the frequency divided by the sample rate).
-    const WaveTable& getTableFor (double phaseDelta) const noexcept;
+    const WaveTable& getTableFor (double phaseDelta) const noexcept { return levels[(size_t) getLevelFor (phaseDelta)]; }
+
+    // That level's number. It depends only on the pitch, so it's the same for every waveform.
+    static int getLevelFor (double phaseDelta) noexcept;
 
     // The most harmonics a level keeps: 1023 at level 0, then 512, 256 and so on down to 1.
     static int getHarmonicLimit (int level) noexcept;

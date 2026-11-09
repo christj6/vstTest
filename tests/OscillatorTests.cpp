@@ -251,6 +251,25 @@ void testOscillatorMatchesSine()
     check (largestError < maxSineError, "the oscillator matches std::sin to within 2e-6 at every pitch");
 }
 
+void testOscillatorFollowsPitchChanges()
+{
+    // Played low first, then at the high test note, it should move to the level that suits that: if it
+    // stayed on the low note's richer level, the high note would alias.
+    boringsynth::Oscillator oscillator (sawtoothTable());
+
+    for (int i = 0; i < 100; ++i)
+        oscillator.getNextSample (0.01);
+
+    std::vector<float> output (aliasTestLength);
+
+    for (auto& sample : output)
+        sample = oscillator.getNextSample (aliasTestPhaseDelta);
+
+    const auto alias = loudestAlias (output);
+    std::printf ("      low note, then 5 kHz on the same oscillator: loudest alias %.1f dB below the fundamental\n", -alias);
+    check (alias < -80.0, "the oscillator reads the level for the pitch it's given now, not an earlier one");
+}
+
 void testOscillatorAtNyquist()
 {
     // At or above Nyquist the oscillator is silent and its phase holds still, so afterwards it
@@ -446,16 +465,161 @@ void testWaveformsAreSingleFrames()
 {
     bool allSingle = true;
 
-    for (int waveform = 0; waveform < boringsynth::waveformNames.size(); ++waveform)
+    for (int waveform = 0; waveform < boringsynth::firstWavetable; ++waveform)
         allSingle = allSingle && waveformTables().get (waveform).getNumFrames() == 1;
 
-    check (allSingle, "every waveform is a table of one frame");
+    check (allSingle, "every waveform before the wavetables is a table of one frame");
+}
+
+void testBlendingFrames()
+{
+    // With three frames: exactly a frame at 0, 0.5 and 1, and an even blend of two midway between. At a
+    // low pitch's level and a high one's, and both frames should read the same.
+    double largestOnFrame = 0.0, largestBetween = 0.0;
+    const auto& table = threeFrameTable();
+
+    for (auto phaseDelta : { 0.01, 1.0 })
+    {
+        const auto level = boringsynth::BandLimitedWaveTable::getLevelFor (phaseDelta);
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            const auto phase = juce::MathConstants<double>::twoPi * i / 1000.0;
+            const auto frame = [&] (int number) { return table.getFrame (number).getLevel (level).getSample (phase); };
+
+            for (auto [position, number] : { std::pair { 0.0f, 0 }, std::pair { 0.5f, 1 }, std::pair { 1.0f, 2 } })
+                largestOnFrame = std::max (largestOnFrame, (double) std::abs (table.getSample (position, level, phase) - frame (number)));
+
+            largestBetween = std::max (largestBetween, (double) std::abs (table.getSample (0.25f, level, phase) - 0.5f * (frame (0) + frame (1))));
+            largestBetween = std::max (largestBetween, (double) std::abs (table.getSample (0.75f, level, phase) - 0.5f * (frame (1) + frame (2))));
+        }
+    }
+
+    std::printf ("      three frames: largest difference %.2e on a frame, %.2e midway between two\n", largestOnFrame, largestBetween);
+    check (largestOnFrame == 0.0, "exactly on a frame, a table reads exactly that frame");
+    check (largestBetween < 1.0e-6, "midway between two frames, a table reads an even blend of them");
+
+    // A glide's rounding can leave a position a hair past the end.
+    const auto pastTheEnd = std::nextafter (1.0f, 2.0f);
+    check (table.getSample (pastTheEnd, 0, 1.0) == table.getSample (1.0f, 0, 1.0), "a position just past the end reads the last frame");
+
+    // Position does nothing to a table of one frame.
+    bool sameAtEveryPosition = true;
+
+    for (auto position : { 0.0f, 0.3f, 1.0f })
+        for (int i = 0; i < 1000; ++i)
+            sameAtEveryPosition = sameAtEveryPosition
+                               && sawtoothTable().getSample (position, 0, juce::MathConstants<double>::twoPi * i / 1000.0)
+                                      == bandLimitedSawtooth().getLevel (0).getSample (juce::MathConstants<double>::twoPi * i / 1000.0);
+
+    check (sameAtEveryPosition, "a table of one frame reads exactly that frame at every position");
+}
+
+void testOscillatorReadsAtPosition()
+{
+    // The oscillator should read the table at the position it's given, following the phase, including
+    // the table it's fading from.
+    boringsynth::Oscillator oscillator (threeFrameTable());
+    double phase = 0.0, largestDifference = 0.0;
+
+    for (int i = 0; i < 4096; ++i)
+    {
+        const auto expected = threeFrameTable().getSample (0.3f, boringsynth::BandLimitedWaveTable::getLevelFor (0.05), phase);
+        largestDifference = std::max (largestDifference, (double) std::abs (oscillator.getNextSample (0.05, 0.3f) - expected));
+        phase = std::fmod (phase + 0.05, juce::MathConstants<double>::twoPi);
+    }
+
+    check (largestDifference == 0.0, "the oscillator reads a table at the position it's given");
+
+    boringsynth::Oscillator fading (threeFrameTable()), fromOnly (threeFrameTable()), toOnly (sawtoothTable());
+    fading.setTable (sawtoothTable(), 100);
+    double largestBlendError = 0.0;
+
+    for (int i = 1; i < 100; ++i)
+    {
+        const auto out = fading.getNextSample (0.05, 0.8f);
+        const auto from = fromOnly.getNextSample (0.05, 0.8f);
+        const auto to = toOnly.getNextSample (0.05, 0.8f);
+        largestBlendError = std::max (largestBlendError, (double) std::abs (out - (from + (float) i / 100.0f * (to - from))));
+    }
+
+    check (largestBlendError < 1.0e-6, "a crossfade from a table reads it at the position too");
+}
+
+void testSineToSawFrames()
+{
+    const auto& table = waveformTables().get (boringsynth::sineToSawWaveform);
+    const auto lastFrame = table.getNumFrames() - 1;
+    check (table.getNumFrames() == 8, "Sine to Saw has eight frames");
+
+    // Its first frame is a sine and its last the saw.
+    double firstError = 0.0, lastError = 0.0;
+
+    for (int i = 0; i < 10000; ++i)
+    {
+        const auto phase = juce::MathConstants<double>::twoPi * i / 10000.0;
+        firstError = std::max (firstError, std::abs ((double) table.getFrame (0).getLevel (0).getSample (phase) - std::sin (phase)));
+
+        if (std::abs (i / 10000.0 - 0.5) >= 0.02) // away from the saw's jump
+            lastError = std::max (lastError, (double) std::abs (table.getFrame (lastFrame).getLevel (0).getSample (phase)
+                                                                - waveformTables().get (boringsynth::sawWaveform).getFrame (0).getLevel (0).getSample (phase)));
+    }
+
+    std::printf ("      Sine to Saw: first frame vs std::sin %.2e, last frame vs Saw %.2e\n", firstError, lastError);
+    check (firstError < maxSineError, "Sine to Saw's first frame is a sine");
+    check (lastError < 1.0e-3, "Sine to Saw's last frame is the saw");
+
+    // Every frame, and every blend, is as loud as the sine.
+    const auto sineRms = 1.0 / std::sqrt (2.0);
+    double worst = 0.0;
+
+    for (int step = 0; step <= 28; ++step)
+    {
+        std::vector<float> samples ((size_t) boringsynth::WaveTable::size);
+
+        for (int i = 0; i < boringsynth::WaveTable::size; ++i)
+            samples[(size_t) i] = table.getSample ((float) step / 28.0f, 0, juce::MathConstants<double>::twoPi * i / boringsynth::WaveTable::size);
+
+        worst = std::max (worst, std::abs (toDecibels (rmsOf (samples) / sineRms)));
+    }
+
+    std::printf ("      Sine to Saw across Position: at most %.3f dB from the sine's loudness\n", worst);
+    check (worst < 0.1, "Sine to Saw stays within 0.1 dB of the sine's loudness at every position");
+
+    // Every frame starts at zero, at every level, so notes start without a click.
+    double largestAtStart = 0.0;
+
+    for (int frame = 0; frame <= lastFrame; ++frame)
+        for (int level = 0; level < boringsynth::BandLimitedWaveTable::numLevels; ++level)
+            largestAtStart = std::max (largestAtStart, (double) std::abs (table.getFrame (frame).getLevel (level).getSample (0.0)));
+
+    std::printf ("      Sine to Saw's largest value at phase 0, any frame and level: %.2e\n", largestAtStart);
+    check (largestAtStart < 1.0e-5, "every frame of Sine to Saw starts at zero");
+}
+
+void testSineToSawDoesntAlias()
+{
+    double worst = -1000.0;
+
+    for (int step = 0; step <= 10; ++step)
+    {
+        boringsynth::Oscillator oscillator (waveformTables().get (boringsynth::sineToSawWaveform));
+        std::vector<float> output (aliasTestLength);
+
+        for (auto& sample : output)
+            sample = oscillator.getNextSample (aliasTestPhaseDelta, (float) step / 10.0f);
+
+        worst = std::max (worst, loudestAlias (output));
+    }
+
+    std::printf ("      Sine to Saw at 5 kHz, across Position: loudest alias %.1f dB below the fundamental\n", -worst);
+    check (worst < -80.0, "Sine to Saw has no audible aliasing at a high note, at any position");
 }
 
 void testOscillatorReadsFirstFrame()
 {
-    // Nothing moves through the frames yet, so a table of several plays its first, the same as that
-    // frame's shape alone. At a low pitch and a high one, as each reads a different level.
+    // By default the oscillator reads a table's first frame, the same as that frame's shape alone. At a
+    // low pitch and a high one, as each reads a different level.
     double largestDifference = 0.0;
 
     for (auto phaseDelta : { 0.01, 1.0 })
@@ -494,6 +658,7 @@ void runOscillatorTests()
     testLevelSelection();
     testNoAliasing();
     testOscillatorMatchesSine();
+    testOscillatorFollowsPitchChanges();
     testOscillatorAtNyquist();
     testWaveformLoudness();
     testWaveformsStartAtZero();
@@ -503,6 +668,10 @@ void runOscillatorTests()
     testFramesAreBandLimitedSeparately();
     testSingleFrameTable();
     testWaveformsAreSingleFrames();
+    testBlendingFrames();
+    testOscillatorReadsAtPosition();
+    testSineToSawFrames();
+    testSineToSawDoesntAlias();
     testOscillatorReadsFirstFrame();
 }
 

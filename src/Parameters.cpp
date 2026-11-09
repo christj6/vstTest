@@ -253,6 +253,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                               lfoSyncRateNames,
                                                               defaultLfoSyncRate));
 
+    // Defaults to 0 %, the first frame: Sine to Saw's is a sine. It does nothing to a waveform of one
+    // frame, so older projects sound as they did.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { wavetablePositionId, 1 },
+                                                             "Wavetable Position",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+
     return layout;
 }
 

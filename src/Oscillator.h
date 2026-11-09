@@ -5,12 +5,12 @@
 namespace boringsynth
 {
 
-// Produces a waveform one sample at a time by reading the first frame of a MultiFrameWaveTable. It
-// holds only the wave's phase; the caller decides the pitch on every sample by passing how far the
-// phase moves, which is how pitch bends glide. Each sample reads the table level that suits that
-// pitch, so none of the waveform's harmonics go past the Nyquist frequency. That's the aliasing that
-// matters; reading between a table's points along straight lines leaves faint errors of its own
-// (about -118 dB for a sine), and whatever comes after, such as the output's clipping, can add more.
+// Produces a waveform one sample at a time by reading a MultiFrameWaveTable. It holds only the wave's
+// phase; the caller decides the pitch and where to read in the table's frames on every sample, which
+// is how pitch bends and Position glide. Each sample reads the table level that suits that pitch, so
+// none of the waveform's harmonics go past the Nyquist frequency. That's the aliasing that matters;
+// reading between a table's points along straight lines leaves faint errors of its own (about -118 dB
+// for a sine), and whatever comes after, such as the output's clipping, can add more.
 class Oscillator
 {
 public:
@@ -35,18 +35,26 @@ public:
     void reset() noexcept { phase = 0.0; }
 
     // Returns the next sample (-1 to 1) and moves the phase on by phaseDelta radians, which is
-    // 2 pi times the frequency divided by the sample rate.
+    // 2 pi times the frequency divided by the sample rate. position is where to read in the table's
+    // frames, from 0 (the first) to 1 (the last).
     //
     // At or above the Nyquist frequency (half the sample rate, a phaseDelta of pi) the wave would
     // alias, so it's silent there instead. The phase holds still, so the wave carries on smoothly
     // if the pitch comes back down, and it never moves by more than pi per sample, so wrapping it
     // once is always enough.
-    float getNextSample (double phaseDelta) noexcept
+    float getNextSample (double phaseDelta, float position = 0.0f) noexcept
     {
         if (phaseDelta >= juce::MathConstants<double>::pi)
             return 0.0f;
 
-        auto sample = table->getFrame (0).getTableFor (phaseDelta).getSample (phase);
+        // Finding the level takes a search, and a held note's pitch rarely changes.
+        if (phaseDelta != levelPhaseDelta)
+        {
+            level = BandLimitedWaveTable::getLevelFor (phaseDelta);
+            levelPhaseDelta = phaseDelta;
+        }
+
+        auto sample = table->getSample (position, level, phase);
 
         if (previousTable != nullptr)
         {
@@ -58,7 +66,7 @@ public:
             else
             {
                 const auto progress = (float) (fadeLength - fadeRemaining) / (float) fadeLength;
-                const auto previousSample = previousTable->getFrame (0).getTableFor (phaseDelta).getSample (phase);
+                const auto previousSample = previousTable->getSample (position, level, phase);
                 sample = previousSample + progress * (sample - previousSample);
             }
         }
@@ -77,6 +85,8 @@ private:
     int fadeLength = 0;    // samples the current crossfade lasts
     int fadeRemaining = 0; // samples of it still to go
     double phase = 0.0;
+    int level = 0;                // the band-limited level for the pitch below
+    double levelPhaseDelta = 0.0; // 0 finds level 0, so it's right before the first search too
 };
 
 } // namespace boringsynth

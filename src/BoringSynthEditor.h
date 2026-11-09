@@ -96,6 +96,9 @@ private:
     // sets the LFO's speed at a time.
     std::unique_ptr<juce::ParameterAttachment> syncAttachment;
 
+    // Greys out Position unless the waveform is a wavetable: it does nothing to the others.
+    std::unique_ptr<juce::ParameterAttachment> waveformAttachment;
+
     Control& addControl (const char* parameterId, const char* labelText);
     static int getCellWidth (const Control& control);
     static int getGroupWidth (const Group& group);

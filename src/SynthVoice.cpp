@@ -19,6 +19,9 @@ constexpr double bendSmoothingSeconds = 0.01;
 // How long a change of waveform during a note takes to fade from the old waveform to the new one.
 constexpr double waveformCrossfadeSeconds = 0.01;
 
+// How long Position takes to follow its knob, so moving it doesn't make a crackling "zipper" noise.
+constexpr double positionSmoothingSeconds = 0.02;
+
 // How long a note that's cut off (for instance, when its voice is stolen) takes to fade out. The
 // same as the shortest release, which is short enough to sound instant and long enough not to click.
 constexpr double cutOffFadeSeconds = 0.005;
@@ -101,6 +104,11 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
 
     oscillator.reset();
     oscillator.setTable (getCurrentTable(), 0);
+
+    // A note starts at the current position, not gliding to it.
+    wavetablePosition.reset (sampleRate, positionSmoothingSeconds);
+    wavetablePosition.setCurrentAndTargetValue (parameters.wavetablePosition.load() / 100.0f);
+
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
     noteNumber = midiNote;
@@ -169,6 +177,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                 slot = &candidate;
 
         *slot = FadingNote { oscillator,
+                                  wavetablePosition.getCurrentValue(),
                                   filter,
                                   filterRunning,
                                   filterMix.getCurrentValue(),
@@ -204,6 +213,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
 
     // A change of waveform during the note fades in rather than switching abruptly.
     oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
+    wavetablePosition.setTargetValue (parameters.wavetablePosition.load() / 100.0f);
 
     // Envelope and filter knob moves apply to the note already playing, though a release already under
     // way keeps the time it started with (see Envelope).
@@ -217,7 +227,8 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
         const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
         lfoPitchRatio = modulation.getPitchRatio (i);
         lfoGain = modulation.getGain (i);
-        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio);
+        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio,
+                                                                wavetablePosition.getNextValue());
         const auto filtered = applyFilter (oscillatorSample, filterEnvelopeLevel, i);
         const auto sample = envelopeLevel * noteLevel * lfoGain * filtered;
 
@@ -240,7 +251,7 @@ void SynthVoice::renderFadingNote (std::optional<FadingNote>& slot, juce::AudioB
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
-        auto input = note.oscillator.getNextSample (note.phaseDelta);
+        auto input = note.oscillator.getNextSample (note.phaseDelta, note.position);
 
         if (note.filterRunning)
         {

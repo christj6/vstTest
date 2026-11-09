@@ -7,13 +7,13 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-// A synth that plays one waveform (sine, triangle, saw or square) at the pitch of each held key,
+// A synth that plays one waveform (sine, triangle, saw, square or a wavetable) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
 // (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
 // factory presets, which are also its programs (with one more for anything else), and your own. The
 // pitch wheel bends notes, the mod wheel can add to the LFO's depth, and the sustain pedal holds
-// notes. The parameters are the output volume, velocity sensitivity, pitch bend range, waveform, the amp envelope's attack, decay,
+// notes. The parameters are the output volume, velocity sensitivity, pitch bend range, waveform, wavetable position, the amp envelope's attack, decay,
 // sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
 // amount, and its own envelope's attack, decay, sustain, release and amount, the LFO's rate, depth,
 // destination and shape, how much the mod wheel adds to the LFO's depth, whether each note restarts
@@ -67,6 +67,7 @@ private:
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
     std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);
     std::atomic<float>* waveform = parameters.getRawParameterValue (waveformId);
+    std::atomic<float>* wavetablePosition = parameters.getRawParameterValue (wavetablePositionId);
     std::atomic<float>* ampAttack = parameters.getRawParameterValue (ampAttackId);
     std::atomic<float>* ampDecay = parameters.getRawParameterValue (ampDecayId);
     std::atomic<float>* ampSustain = parameters.getRawParameterValue (ampSustainId);

@@ -67,7 +67,7 @@ Aliased tones land at frequencies unrelated to the note, so they sound wrong: me
 
 ## 4. Wave tables and band-limiting
 
-*`WaveTable.h`, `BandLimitedWaveTable.cpp`, `Waveforms.cpp`*
+*`WaveTable.h`, `BandLimitedWaveTable.cpp`, `MultiFrameWaveTable.h`, `Waveforms.cpp`*
 
 ### Reading a wave from a table
 
@@ -117,11 +117,25 @@ and the note reads the richest level whose limit is no more than that. For A4 at
 
 The levels halve, so a note may lose up to half the harmonics that would fit: A4 misses harmonics 33 to 54 (14.5 to 23.8 kHz). That's the price of a small ladder. Those harmonics are faint (a saw's 40th is $\tfrac{1}{40}$ of its fundamental, −32 dB) and at the top of hearing.
 
-The ladder costs 4 waveforms × 11 levels × 2,049 samples × 4 bytes, about 350 KB, built once and shared by every voice.
+Each frame's ladder (see below) costs 11 levels × 2,049 samples × 4 bytes, about 90 KB. The four basic waveforms and Sine to Saw's eight frames come to about 1 MB, built once and shared by every voice.
 
 ### Overshoot at the jumps
 
 Cutting off a wave's harmonics makes it ripple next to each jump and overshoot it, by about 9 % of the jump's size, however many harmonics are kept. This is the **Gibbs phenomenon**. A saw or square jumps by 2, so its band-limited version peaks near 1.18, not 1. That's exact maths, not a fault: it's what a perfectly band-limited jump looks like.
+
+### Frames and Position
+
+A **wavetable** is a stack of $F$ cycles, its **frames**, each with its own ladder of levels. Position $x$, from 0 to 1, picks a place among them, and the two frames either side are blended, read at the same phase and level:
+
+$$y = y_j + (q - j)\,(y_{j+1} - y_j), \qquad q = x\,(F - 1), \quad j = \lfloor q \rfloor$$
+
+Exactly on a frame, $q - j = 0$, only that frame is read, so a waveform of one frame ($F = 1$) is unchanged at any Position.
+
+Sine to Saw's $F = 8$ frames are a straight blend of the sine and the loudness-matched saw (section 5), $a$ of the way from one to the other, with $a = f / 7$ for frame $f$:
+
+$$y_f(\varphi) = g_f\,\bigl(\sin\varphi + a\,(\sqrt{1.5}\,\text{saw}(\varphi) - \sin\varphi)\bigr)$$
+
+Each frame's gain $g_f$ scales it to the sine's RMS. The two ends aren't independent (they share a fundamental), so a blend is a little quieter than either: about 0.5 dB midway without $g_f$.
 
 ## 5. Making the waveforms equally loud: RMS
 

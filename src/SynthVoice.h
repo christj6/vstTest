@@ -30,6 +30,7 @@ struct VoiceParameters
     const std::atomic<float>& velocitySensitivity; // 0 to 100 %, read when each note starts
     const std::atomic<float>& pitchBendRange;      // semitones, read on every block
     const std::atomic<float>& waveform;            // position in waveformNames, read on every block
+    const std::atomic<float>& wavetablePosition;   // 0 to 100 %, read on every block
 
     // The amp envelope, read on every block.
     const std::atomic<float>& ampAttack;           // seconds
@@ -79,6 +80,7 @@ private:
     struct FadingNote
     {
         Oscillator oscillator;
+        float position;      // where it was reading in its table's frames
         Filter filter;       // in the state it was in, so the note's tone doesn't change as it fades
         bool filterRunning;
         float filterMix;
@@ -93,6 +95,7 @@ private:
     const Modulation& modulation;
     VoiceParameters parameters;
     Oscillator oscillator;
+    juce::SmoothedValue<float> wavetablePosition; // 0 to 1
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)

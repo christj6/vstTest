@@ -24,6 +24,26 @@ public:
 
     const BandLimitedWaveTable& getFrame (int frame) const noexcept { return frames[(size_t) frame]; }
 
+    // The waveform's value at a phase from 0 up to 2 pi, from one band-limited level (see
+    // BandLimitedWaveTable::getLevelFor), at a position from 0 (the first frame) to 1 (the last).
+    // Between two frames it blends them, sample by sample. Exactly on a frame it reads only that frame,
+    // so a single frame gives exactly its own values.
+    float getSample (float position, int level, double phase) const noexcept
+    {
+        const auto lastFrame = getNumFrames() - 1;
+
+        // A glide's rounding can leave position a hair past 1, which mustn't reach past the last frame.
+        const auto place = std::min (position * (float) lastFrame, (float) lastFrame);
+        const auto frame = (int) place;
+        const auto fraction = place - (float) frame;
+        const auto sample = frames[(size_t) frame].getLevel (level).getSample (phase);
+
+        if (fraction <= 0.0f)
+            return sample;
+
+        return sample + fraction * (frames[(size_t) frame + 1].getLevel (level).getSample (phase) - sample);
+    }
+
 private:
     std::vector<BandLimitedWaveTable> frames;
 };

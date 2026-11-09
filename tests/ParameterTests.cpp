@@ -23,7 +23,8 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterAttack", "filterDecay", "filterSustain", "filterRelease", "filterEnvAmount",
                                         "filterVelocity",
                                         "lfoRate", "lfoDepth", "lfoDestination", "lfoShape",
-                                        "modWheelLfoDepth", "lfoRetrigger", "lfoSync", "lfoSyncRate" };
+                                        "modWheelLfoDepth", "lfoRetrigger", "lfoSync", "lfoSyncRate",
+                                        "wavetablePosition" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -135,13 +136,25 @@ void testWaveformParameter()
 
     // A DAW saves the choice by position, so the list must keep this order forever. New waveforms
     // can only be added to the end.
-    const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square" };
+    const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square", "Sine to Saw" };
     bool inOrder = true;
 
     for (int i = 0; i < expected.size(); ++i)
         inOrder = inOrder && waveform->getText (waveform->convertTo0to1 ((float) i), 20) == expected[i];
 
-    check (inOrder, "the waveform choices are Sine, Triangle, Saw and Square, in that order");
+    check (inOrder, "the waveform choices are Sine, Triangle, Saw, Square and Sine to Saw, in that order");
+
+    // Spelled out on purpose, like 'volume' above.
+    auto* position = findParameter (*processor, "wavetablePosition");
+    check (position != nullptr, "parameter ID 'wavetablePosition' exists");
+
+    if (position == nullptr)
+        return;
+
+    check (getParameter (*processor, "wavetablePosition") == 0.0f
+               && std::abs (position->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
+               && position->getText (position->convertTo0to1 (25.0f), 20) == "25",
+           "Wavetable Position runs from 0 to 100 %, defaults to 0 % (the first frame) and displays as a number ('25')");
 }
 
 void testAmpEnvelopeParameters()
@@ -533,6 +546,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoRetrigger", 1.0f);
     setParameter (*original, "lfoSync", 1.0f);
     setParameter (*original, "lfoSyncRate", 3.0f);
+    setParameter (*original, "wavetablePosition", 70.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -577,6 +591,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "lfoDestination") == 0.0f, "an older project loads with the LFO on the pitch, its only destination back then");
     check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
     check (getParameter (*loaded, "modWheelLfoDepth") == 0.0f, "an older project loads with the mod wheel ignored, as it was");
+    check (getParameter (*loaded, "wavetablePosition") == 0.0f, "an older project loads with Wavetable Position at its first frame");
     check (getParameter (*loaded, "lfoRetrigger") == 0.0f, "an older project loads with the LFO running freely, as it did");
     check (getParameter (*loaded, "lfoSync") == 0.0f, "an older project loads with the LFO's rate in Hz, as it was");
 }

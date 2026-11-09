@@ -1,6 +1,7 @@
 #include "BoringSynthEditor.h"
 
 #include "Parameters.h"
+#include "Waveforms.h"
 
 #include <array>
 
@@ -22,7 +23,7 @@ const std::vector<GroupLayout>& getLayout()
 {
     static const std::vector<GroupLayout> layout {
         { "Global", 0, { { volumeId, "Volume" }, { velocitySensitivityId, "Velocity" }, { pitchBendRangeId, "Bend Range" } } },
-        { "Oscillator", 0, { { waveformId, "Waveform" } } },
+        { "Oscillator", 0, { { waveformId, "Waveform" }, { wavetablePositionId, "Position" } } },
         { "Amp Envelope", 0, { { ampAttackId, "Attack" }, { ampDecayId, "Decay" }, { ampSustainId, "Sustain" }, { ampReleaseId, "Release" } } },
         { "Filter", 1, { { filterEnabledId, "On" }, { filterTypeId, "Type" }, { filterCutoffId, "Cutoff" },
                          { filterResonanceId, "Resonance" }, { filterKeyTrackingId, "Key Track" }, { filterVelocityId, "Velocity" } } },
@@ -106,6 +107,16 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
     {
         syncAttachment = std::make_unique<juce::ParameterAttachment> (*sync, [this] (float value) { showWhichRateApplies (value >= 0.5f); });
         syncAttachment->sendInitialUpdate();
+    }
+
+    if (auto* waveform = parameters.getParameter (waveformId))
+    {
+        waveformAttachment = std::make_unique<juce::ParameterAttachment> (*waveform, [this] (float value)
+        {
+            if (auto* position = findControl (wavetablePositionId))
+                position->setEnabled (juce::roundToInt (value) >= firstWavetable);
+        });
+        waveformAttachment->sendInitialUpdate();
     }
 
     // Read before setting the limits, which resize the still-empty window to the smallest size.

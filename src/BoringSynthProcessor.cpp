@@ -64,6 +64,7 @@ BoringSynthProcessor::BoringSynthProcessor()
     const VoiceParameters voiceParameters { .velocitySensitivity = *velocitySensitivity,
                                             .pitchBendRange = *pitchBendRange,
                                             .waveform = *waveform,
+                                            .wavetablePosition = *wavetablePosition,
                                             .ampAttack = *ampAttack,
                                             .ampDecay = *ampDecay,
                                             .ampSustain = *ampSustain,

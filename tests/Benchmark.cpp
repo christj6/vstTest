@@ -85,6 +85,14 @@ int runBenchmark()
         { "16 notes, saw, pitch wheel moving", true, true,
           [] (juce::AudioProcessor& p) { setParameter (p, "waveform", 2.0f); } },
 
+        // A wavetable between two frames: every voice reads both, on every sample.
+        { "16 notes, Sine to Saw, Position 50 %", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 4.0f);
+              setParameter (p, "wavetablePosition", 50.0f);
+          } },
+
         // A moving filter: its cutoff changes on every block, so every voice keeps working out its
         // filter coefficients again (every 8 samples).
         { "16 notes, saw, filter cutoff moving", true, false,

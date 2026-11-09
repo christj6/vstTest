@@ -209,6 +209,26 @@ void testSyncGreysOutTheRateNotInUse()
     check (unsyncedRight && syncedRight, "LFO Rate is greyed out while synced, and LFO Sync Rate while not");
 }
 
+void testPositionGreyedOutWithoutAWavetable()
+{
+    // Position does nothing to a waveform of one frame, so it's greyed out, following automation too.
+    OpenEditor open;
+    auto* position = open.control ("wavetablePosition");
+
+    if (position == nullptr)
+    {
+        check (false, "the Position control exists");
+        return;
+    }
+
+    const auto greyedAtFirst = ! position->isEnabled();
+    setParameter (*open.processor, "waveform", 4.0f);
+    const auto enabledOnWavetable = position->isEnabled();
+    setParameter (*open.processor, "waveform", 3.0f);
+    const auto greyedOnSquare = ! position->isEnabled();
+    check (greyedAtFirst && enabledOnWavetable && greyedOnSquare, "Position is greyed out unless the waveform is a wavetable");
+}
+
 void testControlsFitAndDontOverlap()
 {
     // At the normal size, the smallest and the largest. Bounds in the window, as drawn, scaled.
@@ -424,6 +444,7 @@ void runEditorTests()
     testParametersMoveControls();
     testKnobsShowTheParametersText();
     testSyncGreysOutTheRateNotInUse();
+    testPositionGreyedOutWithoutAWavetable();
     testControlsFitAndDontOverlap();
     testRowsLineUp();
     testWindowScales();

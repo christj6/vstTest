@@ -10,11 +10,148 @@ namespace testing
 namespace
 {
 
-constexpr int sine = 0, saw = 2, square = 3;
+constexpr int sine = 0, saw = 2, square = 3, sineToSaw = 4;
 
 ProcessorSetUp withWaveform (int waveform)
 {
     return [waveform] (juce::AudioProcessor& p) { setParameter (p, "waveform", (float) waveform); };
+}
+
+ProcessorSetUp withPosition (int waveform, float percent)
+{
+    return [waveform, percent] (juce::AudioProcessor& p)
+    {
+        setParameter (p, "waveform", (float) waveform);
+        setParameter (p, "wavetablePosition", percent);
+    };
+}
+
+// The largest difference between two renders, from a sample on.
+double largestDifference (const std::vector<float>& a, const std::vector<float>& b, size_t from = 0)
+{
+    double largest = 0.0;
+
+    for (auto i = from; i < a.size(); ++i)
+        largest = std::max (largest, (double) std::abs (a[i] - b[i]));
+
+    return largest;
+}
+
+void testPositionLeavesSingleFramesAlone()
+{
+    bool allSame = true;
+
+    for (auto waveform : { sine, saw, square })
+        allSame = allSame && render ({ .events = heldNote, .setUp = withWaveform (waveform) })
+                                 == render ({ .events = heldNote, .setUp = withPosition (waveform, 80.0f) });
+
+    check (allSame, "Position does nothing to a waveform of one frame");
+}
+
+void testSineToSawMorphs()
+{
+    // A note's level is 0.1 of the table's, so these are a tenth of the tables' own differences.
+    const auto toSine = largestDifference (render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 0.0f) }),
+                                           render ({ .events = heldNote, .setUp = withWaveform (sine) }));
+    const auto toSaw = largestDifference (render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 100.0f) }),
+                                          render ({ .events = heldNote, .setUp = withWaveform (saw) }));
+    std::printf ("      Sine to Saw: at 0 %% within %.2e of the sine, at 100 %% within %.2e of the saw\n", toSine, toSaw);
+    check (toSine < 1.0e-6, "Sine to Saw at Position 0 % plays the sine");
+    check (toSaw < 1.0e-3, "Sine to Saw at Position 100 % plays the saw");
+
+    // Midway it's neither, and as loud as the sine.
+    const auto midway = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 50.0f) });
+    const auto sineNote = render ({ .events = heldNote, .setUp = withWaveform (sine) });
+    const auto sawNote = render ({ .events = heldNote, .setUp = withWaveform (saw) });
+    const auto loudness = toDecibels (rmsBetween (midway, 4800, 48000) / rmsBetween (sineNote, 4800, 48000));
+    std::printf ("      Sine to Saw at 50 %%: %+.2f dB from the sine\n", loudness);
+    check (largestDifference (midway, sineNote) > 0.02 && largestDifference (midway, sawNote) > 0.02,
+           "Sine to Saw at Position 50 % is neither the sine nor the saw");
+    check (std::abs (loudness) < 0.2, "Sine to Saw at Position 50 % is as loud as the sine");
+}
+
+void testPositionGlides()
+{
+    // Moved from 0 % to 100 % at the start of a block, Position should take 20 ms (960 samples) to get
+    // there: halfway at the halfway point, then exactly where a note there all along would be.
+    const auto atStart = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 0.0f) });
+    const auto atMiddle = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 50.0f) });
+    const auto atEnd = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 100.0f) });
+    const auto moved = render ({ .events = heldNote,
+                                 .setUp = withPosition (sineToSaw, 0.0f),
+                                 .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                 {
+                                     if (blockStart == changeSample)
+                                         setParameter (p, "wavetablePosition", 100.0f);
+                                 } });
+
+    constexpr int glideLength = 960;
+    const auto halfway = (size_t) (changeSample + glideLength / 2 - 1);
+    const auto errorAtHalfway = std::abs (moved[halfway] - atMiddle[halfway]);
+    std::printf ("      halfway through the glide: %.2e from a note at 50 %%\n", (double) errorAtHalfway);
+
+    check (std::equal (moved.begin(), moved.begin() + changeSample, atStart.begin()), "before Position moves, the note is unchanged");
+    check (errorAtHalfway < 1.0e-3f, "halfway through its 20 ms glide, Position is halfway there");
+    check (std::equal (moved.begin() + changeSample + glideLength, moved.end(), atEnd.begin() + changeSample + glideLength),
+           "after the glide, the note is exactly at the new position");
+}
+
+void testNoteStartsAtPosition()
+{
+    // Position moves between two notes. The second should start there, not glide from the old value.
+    constexpr int secondNote = 20 * 512;
+    const std::vector<TimedMessage> twoNotes { { 0, noteOn (69) }, { 4800, noteOff (69) }, { secondNote, noteOn (69) } };
+    const auto movedBetween = render ({ .events = twoNotes,
+                                        .setUp = withPosition (sineToSaw, 0.0f),
+                                        .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                        {
+                                            if (blockStart == 10 * 512)
+                                                setParameter (p, "wavetablePosition", 100.0f);
+                                        } });
+    const auto thereAllAlong = render ({ .events = twoNotes, .setUp = withPosition (sineToSaw, 100.0f) });
+    check (std::equal (movedBetween.begin() + secondNote, movedBetween.end(), thereAllAlong.begin() + secondNote),
+           "a note starts at the current position, without gliding to it");
+}
+
+void testPositionDoesntDependOnBlockSize()
+{
+    // 1 and 64 divide changeSample, so Position moves at the same moment in every render.
+    const auto renderInBlocks = [] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize,
+                         .events = heldNote,
+                         .setUp = withPosition (sineToSaw, 30.0f),
+                         .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                         {
+                             if (blockStart == changeSample)
+                                 setParameter (p, "wavetablePosition", 90.0f);
+                         } });
+    };
+
+    const auto in512 = renderInBlocks (512);
+    check (renderInBlocks (1) == in512 && renderInBlocks (64) == in512, "Position's glide doesn't depend on the host's block size");
+}
+
+void testStolenNoteKeepsItsPosition()
+{
+    // Sixteen notes, then a seventeenth, which steals a voice. At Position 100 %, Sine to Saw is the saw,
+    // so the whole thing should sound like saws, including the stolen note as it fades out.
+    std::vector<TimedMessage> events;
+
+    for (int i = 0; i < 16; ++i)
+        events.push_back ({ 0, noteOn (40 + i) });
+
+    constexpr int stealSample = 4800;
+    events.push_back ({ stealSample, noteOn (70) });
+
+    const auto quieter = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); };
+    const auto wavetable = render ({ .numSamples = 9600, .events = events,
+                                     .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withPosition (sineToSaw, 100.0f) (p); } });
+    const auto saws = render ({ .numSamples = 9600, .events = events,
+                                .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withWaveform (saw) (p); } });
+    const auto difference = largestDifference (wavetable, saws);
+    std::printf ("      stolen note at Position 100 %% vs the saw: largest difference %.2e\n", difference);
+    check (difference < 1.0e-3, "a stolen note fades out at the position it was at");
 }
 
 void testDefaultWaveformIsSine()
@@ -687,6 +824,12 @@ void runSoundTests()
     testWaveformsAreEquallyLoud();
     testWaveformChangeCrossfades();
     testNoteAfterWaveformChangeStartsDirectly();
+    testPositionLeavesSingleFramesAlone();
+    testSineToSawMorphs();
+    testPositionGlides();
+    testNoteStartsAtPosition();
+    testPositionDoesntDependOnBlockSize();
+    testStolenNoteKeepsItsPosition();
     testAmpAttack();
     testAmpDecayAndSustain();
     testAmpRelease();

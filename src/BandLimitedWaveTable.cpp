@@ -51,10 +51,10 @@ BandLimitedWaveTable::BandLimitedWaveTable (const std::function<float (double ph
     }
 }
 
-const WaveTable& BandLimitedWaveTable::getTableFor (double phaseDelta) const noexcept
+int BandLimitedWaveTable::getLevelFor (double phaseDelta) noexcept
 {
     if (phaseDelta <= 0.0)
-        return levels.front();
+        return 0;
 
     // Harmonic n is at Nyquist when n * phaseDelta reaches pi, so the harmonics that fit are those
     // below pi / phaseDelta. Capped before converting, since it's huge for very low notes.
@@ -63,9 +63,9 @@ const WaveTable& BandLimitedWaveTable::getTableFor (double phaseDelta) const noe
 
     for (int level = 0; level < numLevels; ++level)
         if (getHarmonicLimit (level) <= harmonicsThatFit)
-            return levels[(size_t) level];
+            return level;
 
-    return levels.back();
+    return numLevels - 1;
 }
 
 int BandLimitedWaveTable::getHarmonicLimit (int level) noexcept

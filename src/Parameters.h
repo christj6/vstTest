@@ -12,6 +12,10 @@ constexpr const char* velocitySensitivityId = "velocitySensitivity";
 constexpr const char* pitchBendRangeId = "pitchBendRange";
 constexpr const char* waveformId = "waveform";
 
+// Where to read in a wavetable's frames, from the first to the last. It does nothing to a waveform of
+// a single frame.
+constexpr const char* wavetablePositionId = "wavetablePosition";
+
 // The amp (volume) envelope. "amp" to tell it apart from the filter envelope below.
 constexpr const char* ampAttackId = "ampAttack";
 constexpr const char* ampDecayId = "ampDecay";
