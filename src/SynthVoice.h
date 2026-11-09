@@ -95,7 +95,8 @@ private:
     const Modulation& modulation;
     VoiceParameters parameters;
     Oscillator oscillator;
-    juce::SmoothedValue<float> wavetablePosition; // 0 to 1
+    juce::SmoothedValue<float> wavetablePosition; // the knob, 0 to 1
+    float lastPosition = 0.0f; // where the note last read, the LFO included, for a note that's cut off
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)

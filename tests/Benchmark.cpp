@@ -93,6 +93,16 @@ int runBenchmark()
               setParameter (p, "wavetablePosition", 50.0f);
           } },
 
+        // The LFO sweeping a wavetable: every voice works out Position on every sample, and reads two frames.
+        { "16 notes, Sine to Saw, LFO on Position", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 4.0f);
+              setParameter (p, "wavetablePosition", 50.0f);
+              setParameter (p, "lfoDepth", 50.0f);
+              setParameter (p, "lfoDestination", 3.0f);
+          } },
+
         // A moving filter: its cutoff changes on every block, so every voice keeps working out its
         // filter coefficients again (every 8 samples).
         { "16 notes, saw, filter cutoff moving", true, false,

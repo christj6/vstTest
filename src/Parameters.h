@@ -65,8 +65,8 @@ constexpr const char* modWheelLfoDepthId = "modWheelLfoDepth";
 
 // What the LFO can move, in the order the LFO Destination parameter lists them. A DAW saves the
 // choice as its position in this list, so the order is permanent: new destinations go at the end.
-inline const juce::StringArray lfoDestinationNames { "Pitch", "Volume", "Filter Cutoff" };
-constexpr int pitchDestination = 0, volumeDestination = 1, cutoffDestination = 2;
+inline const juce::StringArray lfoDestinationNames { "Pitch", "Volume", "Filter Cutoff", "Position" };
+constexpr int pitchDestination = 0, volumeDestination = 1, cutoffDestination = 2, positionDestination = 3;
 
 // The kinds of filter, in the order the Filter Type parameter lists them. A DAW saves the choice as
 // its position in this list, so the order is permanent: new types go at the end.

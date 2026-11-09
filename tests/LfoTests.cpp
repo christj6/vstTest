@@ -12,8 +12,8 @@ namespace testing
 namespace
 {
 
-constexpr int pitch = 0, volume = 1, cutoff = 2;
-constexpr int sine = 0, triangle = 1, saw = 2, square = 3;
+constexpr int pitch = 0, volume = 1, cutoff = 2, tablePosition = 3;
+constexpr int sine = 0, triangle = 1, saw = 2, square = 3, sineToSaw = 4;
 
 ProcessorSetUp withLfo (float rateHz, float depthPercent, int destination = pitch, int shape = sine)
 {
@@ -238,6 +238,151 @@ void testDestinationChangeCrossfades()
     const auto atChange = largestStep (std::vector<float> (output.begin() + changeSample - 10, output.begin() + changeSample + 960));
     std::printf ("      largest step: %.4f before switching pitch to volume, %.4f around the switch\n", steady, atChange);
     check (atChange <= steady * 1.1f, "changing the LFO's destination during a note crossfades instead of jumping");
+}
+
+//==============================================================================
+// A plug-in on Sine to Saw with its knob at knobPercent, and the LFO (a sine, unless given) on Position.
+ProcessorSetUp withPositionLfo (float rateHz, float depthPercent, float knobPercent, int shape = sine, int destination = tablePosition)
+{
+    return [=] (juce::AudioProcessor& p)
+    {
+        setParameter (p, "waveform", (float) sineToSaw);
+        setParameter (p, "wavetablePosition", knobPercent);
+        withLfo (rateHz, depthPercent, destination, shape) (p);
+    };
+}
+
+// What a held A4 note should be, worked out from the table itself: at each sample, Position is whatever
+// positionAt gives, at the level of a note at full velocity.
+std::vector<float> expectedTableNote (int numSamples, const std::function<double (int sample)>& positionAt)
+{
+    const juce::SharedResourcePointer<boringsynth::WaveformTables> tables;
+    const auto& table = tables->get (sineToSaw);
+    const auto phaseDelta = juce::MathConstants<double>::twoPi * 440.0 / testSampleRate;
+    const auto level = boringsynth::BandLimitedWaveTable::getLevelFor (phaseDelta);
+    std::vector<float> expected ((size_t) numSamples);
+    double phase = 0.0;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        expected[(size_t) i] = 0.1f * table.getSample ((float) positionAt (i), level, phase);
+        phase = std::fmod (phase + phaseDelta, juce::MathConstants<double>::twoPi);
+    }
+
+    return expected;
+}
+
+double largestDifference (const std::vector<float>& a, const std::vector<float>& b, size_t from = 0)
+{
+    double largest = 0.0;
+
+    for (auto i = from; i < a.size(); ++i)
+        largest = std::max (largest, (double) std::abs (a[i] - b[i]));
+
+    return largest;
+}
+
+void testLfoMovesPosition()
+{
+    // A rate that doesn't divide the note evenly. Position should be the knob plus depth times the LFO.
+    constexpr auto rateHz = 3.7;
+    const auto output = render ({ .events = heldNote, .setUp = withPositionLfo ((float) rateHz, 50.0f, 50.0f) });
+    const auto expected = expectedTableNote (48000, [] (int i) { return 0.5 + 0.5 * lfoAt (rateHz, i); });
+    const auto difference = largestDifference (output, expected);
+    std::printf ("      knob 50 %%, depth 50 %%: largest difference from the note worked out by hand %.2e\n", difference);
+    check (difference < 2.0e-6, "the LFO moves Position by its depth either way around the knob");
+}
+
+void testPositionLfoStopsAtTheEnds()
+{
+    // At full depth from the knob's middle it reaches both ends; from the bottom and the top of the knob,
+    // it should stay within them, where it holds still.
+    constexpr auto rateHz = 3.7;
+    double worst = 0.0;
+
+    for (auto knob : { 0.0f, 25.0f, 100.0f })
+    {
+        const auto output = render ({ .events = heldNote, .setUp = withPositionLfo ((float) rateHz, 100.0f, knob) });
+        const auto expected = expectedTableNote (48000, [knob] (int i) { return juce::jlimit (0.0, 1.0, knob / 100.0 + lfoAt (rateHz, i)); });
+        worst = std::max (worst, largestDifference (output, expected));
+    }
+
+    std::printf ("      full depth from three places on the knob: largest difference %.2e\n", worst);
+    check (worst < 2.0e-6, "the LFO's push on Position stops at the ends of the table");
+}
+
+void testPositionLfoLeavesEverythingElse()
+{
+    // On a waveform of one frame, Position has nothing to move.
+    const auto plainSaw = render ({ .events = heldNote, .setUp = [] (juce::AudioProcessor& p) { setParameter (p, "waveform", (float) saw); } });
+    const auto movedSaw = render ({ .events = heldNote,
+                                    .setUp = [] (juce::AudioProcessor& p)
+                                    {
+                                        setParameter (p, "waveform", (float) saw);
+                                        withLfo (3.7f, 100.0f, tablePosition) (p);
+                                    } });
+    check (plainSaw == movedSaw, "the LFO on Position does nothing to a waveform of one frame");
+
+    // And sent elsewhere, the LFO doesn't move Position: the cutoff LFO does nothing with the filter off.
+    const auto steady = render ({ .events = heldNote, .setUp = withPositionLfo (3.7f, 0.0f, 40.0f) });
+    const auto elsewhere = render ({ .events = heldNote, .setUp = withPositionLfo (3.7f, 100.0f, 40.0f, sine, cutoff) });
+    check (steady == elsewhere, "the LFO sent elsewhere doesn't move Position");
+}
+
+void testPositionDestinationCrossfades()
+{
+    // Switched to Position from the cutoff (which does nothing with the filter off), the LFO's effect
+    // should come in over 10 ms (480 samples), then carry on exactly.
+    constexpr auto rateHz = 3.7;
+    const auto output = render ({ .events = heldNote,
+                                  .setUp = withPositionLfo ((float) rateHz, 50.0f, 50.0f, sine, cutoff),
+                                  .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                  {
+                                      if (blockStart == changeSample)
+                                          setParameter (p, "lfoDestination", (float) tablePosition);
+                                  } });
+    const auto expected = expectedTableNote (48000, [] (int i)
+    {
+        const auto amount = juce::jlimit (0.0, 1.0, (i - changeSample + 1) / 480.0);
+        return 0.5 + amount * 0.5 * lfoAt (rateHz, i);
+    });
+    const auto difference = largestDifference (output, expected);
+    std::printf ("      switching to Position: largest difference %.2e\n", difference);
+    check (difference < 2.0e-6, "changing the LFO's destination to Position fades it in over 10 ms");
+}
+
+void testPositionLfoBlockSizeIndependence()
+{
+    const auto renderInBlocksOf = [] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize, .numSamples = 20000, .events = heldNote, .setUp = withPositionLfo (17.3f, 60.0f, 50.0f, square) });
+    };
+
+    const auto in512 = renderInBlocksOf (512);
+    check (renderInBlocksOf (1) == in512 && renderInBlocksOf (7) == in512 && renderInBlocksOf (2048) == in512,
+           "the LFO on Position doesn't depend on the host's block size");
+}
+
+void testStolenNoteKeepsTheLfosPosition()
+{
+    // A very slow square from the bottom of the knob at full depth: after its first 5 ms it holds Position
+    // at exactly 100 %, for several seconds. So from then on, the notes should be exactly those of a knob
+    // at 100 %, including a stolen note as it fades out, at the position the LFO had put it.
+    std::vector<TimedMessage> events;
+
+    for (int i = 0; i < 16; ++i)
+        events.push_back ({ 0, noteOn (40 + i) });
+
+    events.push_back ({ 4800, noteOn (70) });
+
+    const auto quieter = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); };
+    const auto byLfo = render ({ .numSamples = 9600, .events = events,
+                                 .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withPositionLfo (0.05f, 100.0f, 0.0f, square) (p); } });
+    const auto byKnob = render ({ .numSamples = 9600, .events = events,
+                                  .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withPositionLfo (0.05f, 0.0f, 100.0f) (p); } });
+    const auto difference = largestDifference (byLfo, byKnob, 480);
+    std::printf ("      stolen note, Position from the LFO vs the knob: largest difference %.2e\n", difference);
+    check (difference < 1.0e-6, "a stolen note fades out at the position the LFO had put it");
 }
 
 void testCutoffLfoBlockSizeIndependence()
@@ -982,6 +1127,12 @@ void runLfoTests()
     testCutoffLfoNeedsTheFilter();
     testDestinationChangeCrossfades();
     testCutoffLfoBlockSizeIndependence();
+    testLfoMovesPosition();
+    testPositionLfoStopsAtTheEnds();
+    testPositionLfoLeavesEverythingElse();
+    testPositionDestinationCrossfades();
+    testPositionLfoBlockSizeIndependence();
+    testStolenNoteKeepsTheLfosPosition();
     testDefaultShapeIsSine();
     testLfoShapesOnPitch();
     testShapeChangeCrossfades();

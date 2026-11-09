@@ -22,7 +22,7 @@ public:
     static constexpr int maxSamples = 512;
 
     // Each takes a sample position in the output buffer. Unless the LFO is sent to that
-    // destination, the pitch ratio and gain are exactly 1 and the cutoff offset exactly 0.
+    // destination, the pitch ratio and gain are exactly 1 and the cutoff and position offsets exactly 0.
 
     // Multiplies a note's pitch.
     float getPitchRatio (int sample) const noexcept { return pitchRatios[index (sample)]; }
@@ -36,6 +36,9 @@ public:
     // Whether the LFO is moving the cutoff at all, even where it happens to be at 0 octaves.
     bool movesCutoff (int sample) const noexcept { return cutoffMoving[index (sample)]; }
 
+    // Moves a note's wavetable position, from -1 to 1 (the whole knob, either way).
+    float getPositionOffset (int sample) const noexcept { return positionOffsets[index (sample)]; }
+
 private:
     friend class Synth;
 
@@ -45,6 +48,7 @@ private:
     std::array<float, maxSamples> gains {};
     std::array<float, maxSamples> cutoffOctaves {};
     std::array<bool, maxSamples> cutoffMoving {};
+    std::array<float, maxSamples> positionOffsets {};
     int startSample = 0; // the output buffer position the arrays' first entries are for
 };
 
@@ -119,7 +123,7 @@ private:
 
     // How much of the LFO each destination gets (indexed by position in lfoDestinationNames): 1 for
     // the chosen one and 0 for the others, except while crossfading after the destination changes.
-    std::array<juce::SmoothedValue<float>, 3> destinationAmounts;
+    std::array<juce::SmoothedValue<float>, 4> destinationAmounts;
 
     Modulation modulation;
 

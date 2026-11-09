@@ -9,7 +9,7 @@
 
 // A synth that plays one waveform (sine, triangle, saw, square or one of its wavetables) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
-// envelope. An LFO moves the pitch (vibrato), the volume (tremolo) or the filter cutoff. Its editor
+// envelope. An LFO moves the pitch (vibrato), the volume (tremolo), the filter cutoff or the wavetable position. Its editor
 // (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
 // factory presets, which are also its programs (with one more for anything else), and your own. The
 // pitch wheel bends notes, the mod wheel can add to the LFO's depth, and the sustain pedal holds

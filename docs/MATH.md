@@ -288,6 +288,7 @@ With depth $d$ (0 to 1) and the LFO's value $u$ (−1 to 1):
 | Pitch | Multiplies the pitch by $2^{\,d^2 u}$: up to an octave either way. Squared, so most of the knob covers the small depths vibrato uses: 20 % is about ½ semitone. |
 | Volume | Multiplies the level by $1 - \tfrac{d}{2}(1 - u)$: full level at the LFO's peak, down to $1 - d$ at its trough. Never above 1. |
 | Filter cutoff | Moves it by $4 d u$ octaves. |
+| Position | Moves it by $d u$, added to the knob's position $x$ and kept to the table: $\min(1, \max(0, x + d u))$. |
 
 The mod wheel $m$ (0 to 1) adds to the depth: $d = \min(1, d_\text{knob} + d_\text{wheel} \cdot m)$.
 

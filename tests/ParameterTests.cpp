@@ -341,14 +341,14 @@ void testLfoParameters()
     if (destination == nullptr)
         return;
 
-    const juce::StringArray expected { "Pitch", "Volume", "Filter Cutoff" };
+    const juce::StringArray expected { "Pitch", "Volume", "Filter Cutoff", "Position" };
     bool inOrder = true;
 
     for (int i = 0; i < expected.size(); ++i)
         inOrder = inOrder && destination->getText (destination->convertTo0to1 ((float) i), 20) == expected[i];
 
     check (getParameter (*processor, "lfoDestination") == 0.0f, "the LFO destination defaults to the first choice (pitch)");
-    check (inOrder, "the LFO destinations are Pitch, Volume and Filter Cutoff, in that order");
+    check (inOrder, "the LFO destinations are Pitch, Volume, Filter Cutoff and Position, in that order");
 
     // Spelled out on purpose, like the IDs above.
     auto* shape = findParameter (*processor, "lfoShape");

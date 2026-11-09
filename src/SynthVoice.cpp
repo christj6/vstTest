@@ -177,7 +177,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                 slot = &candidate;
 
         *slot = FadingNote { oscillator,
-                                  wavetablePosition.getCurrentValue(),
+                                  lastPosition,
                                   filter,
                                   filterRunning,
                                   filterMix.getCurrentValue(),
@@ -227,8 +227,8 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
         const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
         lfoPitchRatio = modulation.getPitchRatio (i);
         lfoGain = modulation.getGain (i);
-        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio,
-                                                                wavetablePosition.getNextValue());
+        lastPosition = std::clamp (wavetablePosition.getNextValue() + modulation.getPositionOffset (i), 0.0f, 1.0f);
+        const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio, lastPosition);
         const auto filtered = applyFilter (oscillatorSample, filterEnvelopeLevel, i);
         const auto sample = envelopeLevel * noteLevel * lfoGain * filtered;
 
