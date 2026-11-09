@@ -103,6 +103,15 @@ int runBenchmark()
               setParameter (p, "lfoDestination", 3.0f);
           } },
 
+        // The Position envelope, on every note, for as long as it's in its attack or decay.
+        { "16 notes, Sine to Saw, Position env", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 4.0f);
+              setParameter (p, "positionAttack", 10.0f);
+              setParameter (p, "positionEnvAmount", 100.0f);
+          } },
+
         // A moving filter: its cutoff changes on every block, so every voice keeps working out its
         // filter coefficients again (every 8 samples).
         { "16 notes, saw, filter cutoff moving", true, false,

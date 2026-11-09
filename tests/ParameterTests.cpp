@@ -24,7 +24,8 @@ const char* const laterParameterIds[] { "velocitySensitivity", "pitchBendRange",
                                         "filterVelocity",
                                         "lfoRate", "lfoDepth", "lfoDestination", "lfoShape",
                                         "modWheelLfoDepth", "lfoRetrigger", "lfoSync", "lfoSyncRate",
-                                        "wavetablePosition" };
+                                        "wavetablePosition",
+                                        "positionAttack", "positionDecay", "positionSustain", "positionRelease", "positionEnvAmount" };
 
 juce::StringArray getParameterIds (juce::AudioProcessor& processor)
 {
@@ -156,6 +157,26 @@ void testWaveformParameter()
                && std::abs (position->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
                && position->getText (position->convertTo0to1 (25.0f), 20) == "25",
            "Wavetable Position runs from 0 to 100 %, defaults to 0 % (the first frame) and displays as a number ('25')");
+
+    // Spelled out on purpose, like 'volume' above.
+    auto* amount = findParameter (*processor, "positionEnvAmount");
+    bool allExist = amount != nullptr;
+
+    for (auto* id : { "positionAttack", "positionDecay", "positionSustain", "positionRelease" })
+        allExist = allExist && findParameter (*processor, id) != nullptr;
+
+    check (allExist, "parameter IDs 'positionAttack', 'positionDecay', 'positionSustain', 'positionRelease' and 'positionEnvAmount' exist");
+
+    if (! allExist)
+        return;
+
+    check (std::abs (amount->convertFrom0to1 (0.0f) + 100.0f) < 0.01f && std::abs (amount->convertFrom0to1 (1.0f) - 100.0f) < 0.01f
+               && std::abs (getParameter (*processor, "positionEnvAmount")) < 0.01f
+               && amount->getText (amount->convertTo0to1 (50.0f), 20) == "+50" && amount->getText (amount->convertTo0to1 (-50.0f), 20) == "-50",
+           "Position Env Amount runs from -100 to 100 %, defaults to 0 (no effect) and displays with its sign ('+50')");
+    check (getParameter (*processor, "positionAttack") == 0.0f && std::abs (getParameter (*processor, "positionDecay") - 0.3f) < 1.0e-5f
+               && getParameter (*processor, "positionSustain") == 0.0f && std::abs (getParameter (*processor, "positionRelease") - 0.3f) < 1.0e-5f,
+           "the Position envelope defaults to a pluck: no attack, a 300 ms decay to 0 %, a 300 ms release");
 }
 
 void testAmpEnvelopeParameters()
@@ -548,6 +569,7 @@ void testStateFromOlderVersions()
     setParameter (*original, "lfoSync", 1.0f);
     setParameter (*original, "lfoSyncRate", 3.0f);
     setParameter (*original, "wavetablePosition", 70.0f);
+    setParameter (*original, "positionEnvAmount", -40.0f);
 
     juce::MemoryBlock state;
     original->getStateInformation (state);
@@ -593,6 +615,7 @@ void testStateFromOlderVersions()
     check (getParameter (*loaded, "lfoShape") == 0.0f, "an older project loads with the sine LFO, its only shape back then");
     check (getParameter (*loaded, "modWheelLfoDepth") == 0.0f, "an older project loads with the mod wheel ignored, as it was");
     check (getParameter (*loaded, "wavetablePosition") == 0.0f, "an older project loads with Wavetable Position at its first frame");
+    check (getParameter (*loaded, "positionEnvAmount") == 0.0f, "an older project loads with the Position envelope having no effect");
     check (getParameter (*loaded, "lfoRetrigger") == 0.0f, "an older project loads with the LFO running freely, as it did");
     check (getParameter (*loaded, "lfoSync") == 0.0f, "an older project loads with the LFO's rate in Hz, as it was");
 }

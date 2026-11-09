@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Measurements.h"
+#include "Waveforms.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -164,6 +165,39 @@ inline float getParameter (juce::AudioProcessor& processor, const juce::String& 
 
     check (false, ("parameter '" + id + "' exists").toRawUTF8());
     return 0.0f;
+}
+
+// The largest difference between two renders, from a sample on.
+inline double largestDifference (const std::vector<float>& a, const std::vector<float>& b, size_t from = 0)
+{
+    double largest = 0.0;
+
+    for (auto i = from; i < a.size(); ++i)
+        largest = std::max (largest, (double) std::abs (a[i] - b[i]));
+
+    return largest;
+}
+
+// What a held A4 note on Sine to Saw should be, worked out from the table itself: at each sample, in
+// order, Position is whatever positionAt gives, and its level at full velocity is scaled by gainAt, if given.
+inline std::vector<float> expectedTableNote (int numSamples, const std::function<double (int sample)>& positionAt,
+                                             const std::function<double (int sample)>& gainAt = {})
+{
+    const juce::SharedResourcePointer<boringsynth::WaveformTables> tables;
+    const auto& table = tables->get (boringsynth::sineToSawWaveform);
+    const auto phaseDelta = juce::MathConstants<double>::twoPi * 440.0 / testSampleRate;
+    const auto level = boringsynth::BandLimitedWaveTable::getLevelFor (phaseDelta);
+    std::vector<float> expected ((size_t) numSamples);
+    double phase = 0.0;
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto gain = gainAt ? (float) gainAt (i) : 1.0f;
+        expected[(size_t) i] = gain * 0.1f * table.getSample ((float) positionAt (i), level, phase);
+        phase = std::fmod (phase + phaseDelta, juce::MathConstants<double>::twoPi);
+    }
+
+    return expected;
 }
 
 void runNoteTests();

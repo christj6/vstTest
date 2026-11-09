@@ -263,6 +263,33 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
                                                                  .withLabel ("%")
                                                                  .withStringFromValueFunction (percentToText)));
 
+    // The Position envelope's shape defaults to the same "pluck" as the filter's: from the amount away
+    // from the knob, back to it over 300 ms. It only matters once the amount is turned up, which
+    // defaults to 0: no effect, the behaviour before this existed.
+    layout.add (makeTimeParameter (positionAttackId, "Position Attack", 0.0f, 0.0f));
+    layout.add (makeTimeParameter (positionDecayId, "Position Decay", minDecaySeconds, 0.3f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { positionSustainId, 1 },
+                                                             "Position Sustain",
+                                                             juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction (percentToText)));
+    layout.add (makeTimeParameter (positionReleaseId, "Position Release", minReleaseSeconds, 0.3f));
+
+    // How far Position moves when the envelope is at its peak, as a share of the whole table. Negative
+    // amounts move it down instead.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { positionEnvAmountId, 1 },
+                                                             "Position Env Amount",
+                                                             juce::NormalisableRange<float> (-100.0f, 100.0f),
+                                                             0.0f,
+                                                             juce::AudioParameterFloatAttributes()
+                                                                 .withLabel ("%")
+                                                                 .withStringFromValueFunction ([] (float percent, int)
+                                                                 {
+                                                                     return (percent > 0.0f ? "+" : "") + juce::String (juce::roundToInt (percent));
+                                                                 })));
+
     return layout;
 }
 

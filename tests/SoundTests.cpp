@@ -1,5 +1,7 @@
 #include "TestHelpers.h"
 
+#include "Envelope.h"
+
 #include <array>
 
 // Sound tests: the waveforms, the amp envelope and the filter, rendered through the whole plug-in.
@@ -24,17 +26,6 @@ ProcessorSetUp withPosition (int waveform, float percent)
         setParameter (p, "waveform", (float) waveform);
         setParameter (p, "wavetablePosition", percent);
     };
-}
-
-// The largest difference between two renders, from a sample on.
-double largestDifference (const std::vector<float>& a, const std::vector<float>& b, size_t from = 0)
-{
-    double largest = 0.0;
-
-    for (auto i = from; i < a.size(); ++i)
-        largest = std::max (largest, (double) std::abs (a[i] - b[i]));
-
-    return largest;
 }
 
 void testPositionLeavesSingleFramesAlone()
@@ -187,6 +178,237 @@ void testStolenNoteKeepsItsPosition()
     const auto difference = largestDifference (wavetable, saws);
     std::printf ("      stolen note at Position 100 %% vs the saw: largest difference %.2e\n", difference);
     check (difference < 1.0e-3, "a stolen note fades out at the position it was at");
+}
+
+//==============================================================================
+struct PositionEnvelopeSettings
+{
+    float knob = 0.0f, amount = 0.0f, attack = 0.0f, decay = 0.3f, sustain = 0.0f, release = 0.3f;
+};
+
+ProcessorSetUp withPositionEnvelope (const PositionEnvelopeSettings& s, int waveform = sineToSaw)
+{
+    return [s, waveform] (juce::AudioProcessor& p)
+    {
+        withPosition (waveform, s.knob) (p);
+        setParameter (p, "positionAttack", s.attack);
+        setParameter (p, "positionDecay", s.decay);
+        setParameter (p, "positionSustain", s.sustain);
+        setParameter (p, "positionRelease", s.release);
+        setParameter (p, "positionEnvAmount", s.amount);
+    };
+}
+
+boringsynth::Envelope makeEnvelope (const PositionEnvelopeSettings& s)
+{
+    boringsynth::Envelope envelope;
+    envelope.setSampleRate (testSampleRate);
+    envelope.setSettings ({ s.attack, s.decay, s.sustain / 100.0f, s.release });
+    envelope.noteOn();
+    return envelope;
+}
+
+void testPositionEnvelopeSweepsPosition()
+{
+    // Through its attack and decay to its sustain, up and down from the knob, and in both directions.
+    double worst = 0.0;
+
+    for (const PositionEnvelopeSettings s : { PositionEnvelopeSettings { 20.0f, 60.0f, 0.05f, 0.3f, 30.0f, 0.3f },
+                                              PositionEnvelopeSettings { 80.0f, -50.0f, 0.0f, 0.2f, 40.0f, 0.3f } })
+    {
+        const auto output = render ({ .events = heldNote, .setUp = withPositionEnvelope (s) });
+        auto envelope = makeEnvelope (s);
+        const auto expected = expectedTableNote (48000, [&] (int) { return s.knob / 100.0 + s.amount / 100.0 * envelope.getNextSample(); });
+        worst = std::max (worst, largestDifference (output, expected));
+    }
+
+    std::printf ("      attack, decay and sustain, up and down: largest difference %.2e from the note worked out by hand\n", worst);
+    check (worst < 2.0e-6, "the Position envelope moves Position by its amount, around the knob");
+}
+
+void testPositionEnvelopeReleases()
+{
+    // Let go, the note's Position falls back to the knob over the envelope's release, while the note's
+    // level falls over its own, unrelated.
+    constexpr int noteOffAt = 24000;
+    const PositionEnvelopeSettings s { 10.0f, 80.0f, 0.0f, 0.1f, 75.0f, 0.15f };
+    const auto output = render ({ .events = { { 0, noteOn (69) }, { noteOffAt, noteOff (69) } },
+                                  .setUp = [s] (juce::AudioProcessor& p)
+                                  {
+                                      withPositionEnvelope (s) (p);
+                                      setParameter (p, "ampRelease", 0.4f);
+                                  } });
+    auto envelope = makeEnvelope (s);
+    boringsynth::Envelope amp;
+    amp.setSampleRate (testSampleRate);
+    amp.setSettings ({ 0.0f, 0.2f, 1.0f, 0.4f });
+    amp.noteOn();
+
+    const auto expected = expectedTableNote (48000,
+                                             [&] (int i)
+                                             {
+                                                 if (i == noteOffAt)
+                                                     envelope.noteOff();
+
+                                                 return s.knob / 100.0 + s.amount / 100.0 * envelope.getNextSample();
+                                             },
+                                             [&] (int i)
+                                             {
+                                                 if (i == noteOffAt)
+                                                     amp.noteOff();
+
+                                                 return amp.getNextSample();
+                                             });
+    const auto difference = largestDifference (output, expected);
+    std::printf ("      released: largest difference %.2e\n", difference);
+    check (difference < 2.0e-6, "the Position envelope releases when the key is let go, on its own time");
+}
+
+void testPositionEnvelopeWithTheLfo()
+{
+    constexpr auto rateHz = 3.7;
+    const PositionEnvelopeSettings s { 30.0f, 40.0f, 0.1f, 0.2f, 50.0f, 0.3f };
+    const auto output = render ({ .events = heldNote,
+                                  .setUp = [s] (juce::AudioProcessor& p)
+                                  {
+                                      withPositionEnvelope (s) (p);
+                                      setParameter (p, "lfoRate", (float) rateHz);
+                                      setParameter (p, "lfoDepth", 25.0f);
+                                      setParameter (p, "lfoDestination", 3.0f);
+                                  } });
+    auto envelope = makeEnvelope (s);
+    const auto expected = expectedTableNote (48000, [&] (int i)
+    {
+        const auto lfo = std::sin (juce::MathConstants<double>::twoPi * rateHz * i / testSampleRate);
+        return juce::jlimit (0.0, 1.0, s.knob / 100.0 + s.amount / 100.0 * envelope.getNextSample() + 0.25 * lfo);
+    });
+    const auto difference = largestDifference (output, expected);
+    std::printf ("      with the LFO: largest difference %.2e\n", difference);
+    check (difference < 2.0e-6, "the Position envelope and the LFO add up");
+}
+
+void testPositionEnvelopeStopsAtTheEnds()
+{
+    // Pushed past either end, it should hold there.
+    const auto atBottom = render ({ .events = heldNote, .setUp = withPositionEnvelope ({ .knob = 0.0f, .amount = -100.0f, .sustain = 100.0f }) });
+    const auto knobAtBottom = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 0.0f) });
+    const auto atTop = render ({ .events = heldNote, .setUp = withPositionEnvelope ({ .knob = 70.0f, .amount = 100.0f, .sustain = 100.0f }) });
+    const auto knobAtTop = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 100.0f) });
+    check (atBottom == knobAtBottom && atTop == knobAtTop, "the Position envelope's push stops at the ends of the table");
+}
+
+void testPositionEnvelopeDoesNothingUntilAsked()
+{
+    // At an amount of 0, whatever its shape, and on a waveform of one frame, whatever its amount.
+    const auto plain = render ({ .events = heldNote, .setUp = withPosition (sineToSaw, 35.0f) });
+    const auto noAmount = render ({ .events = heldNote, .setUp = withPositionEnvelope ({ .knob = 35.0f, .amount = 0.0f, .attack = 0.2f, .sustain = 60.0f }) });
+    check (plain == noAmount, "at an amount of 0, the Position envelope does nothing");
+
+    const auto plainSaw = render ({ .events = heldNote, .setUp = withWaveform (saw) });
+    const auto movedSaw = render ({ .events = heldNote, .setUp = withPositionEnvelope ({ .amount = 100.0f, .sustain = 50.0f }, saw) });
+    check (plainSaw == movedSaw, "the Position envelope does nothing to a waveform of one frame");
+}
+
+void testEveryNoteHasItsOwnPositionEnvelope()
+{
+    // A note starting later should start its own sweep, and leave the first note's alone: the two
+    // together are the same as each played alone.
+    constexpr int secondAt = 12000;
+    const PositionEnvelopeSettings s { .knob = 10.0f, .amount = 80.0f, .decay = 0.4f };
+    const auto together = render ({ .events = { { 0, noteOn (69) }, { secondAt, noteOn (76) } }, .setUp = withPositionEnvelope (s) });
+    const auto first = render ({ .events = { { 0, noteOn (69) } }, .setUp = withPositionEnvelope (s) });
+    const auto second = render ({ .events = { { secondAt, noteOn (76) } }, .setUp = withPositionEnvelope (s) });
+    double largest = 0.0;
+
+    for (size_t i = 0; i < together.size(); ++i)
+        largest = std::max (largest, (double) std::abs (together[i] - first[i] - second[i]));
+
+    std::printf ("      two notes against each alone: largest difference %.2e\n", largest);
+    check (largest < 1.0e-6, "every note has its own Position envelope, starting with the note");
+
+    // A voice used again while its envelope is still releasing, with the note itself long gone (the amp
+    // envelope's release is only 5 ms): the new note should start its sweep from the beginning.
+    constexpr int firstOff = 12000, againAt = 14000;
+    const PositionEnvelopeSettings longRelease { .knob = 10.0f, .amount = 80.0f, .decay = 0.4f, .sustain = 50.0f, .release = 5.0f };
+    const auto played = render ({ .events = { { 0, noteOn (69) }, { firstOff, noteOff (69) }, { againAt, noteOn (69) } },
+                                  .setUp = withPositionEnvelope (longRelease) });
+    const auto fresh = render ({ .events = { { againAt, noteOn (69) } }, .setUp = withPositionEnvelope (longRelease) });
+    const auto difference = largestDifference (played, fresh, (size_t) againAt);
+    std::printf ("      a note on a voice whose envelope is still releasing: largest difference %.2e\n", difference);
+    check (difference == 0.0, "a note starts its Position envelope afresh, even while the voice's last one is still releasing");
+}
+
+void testPositionEnvAmountGlides()
+{
+    // With the envelope held at full, moved from 0 to 100 % at the start of a block, the amount should
+    // take 20 ms (960 samples) to get there.
+    const PositionEnvelopeSettings none { .amount = 0.0f, .sustain = 100.0f };
+    PositionEnvelopeSettings half = none, full = none;
+    half.amount = 50.0f;
+    full.amount = 100.0f;
+    const auto atMiddle = render ({ .events = heldNote, .setUp = withPositionEnvelope (half) });
+    const auto atEnd = render ({ .events = heldNote, .setUp = withPositionEnvelope (full) });
+    const auto moved = render ({ .events = heldNote,
+                                 .setUp = withPositionEnvelope (none),
+                                 .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                 {
+                                     if (blockStart == changeSample)
+                                         setParameter (p, "positionEnvAmount", 100.0f);
+                                 } });
+    constexpr int glideLength = 960;
+    const auto halfway = (size_t) (changeSample + glideLength / 2 - 1);
+    check (std::abs (moved[halfway] - atMiddle[halfway]) < 1.0e-3f, "halfway through its 20 ms glide, the amount is halfway there");
+    check (std::equal (moved.begin() + changeSample + glideLength, moved.end(), atEnd.begin() + changeSample + glideLength),
+           "after the glide, the note is exactly where that amount puts it");
+}
+
+void testPositionEnvelopeFollowsItsKnobs()
+{
+    // Sustain changed during a held note reaches that note, gliding over 20 ms.
+    const PositionEnvelopeSettings start { .amount = 100.0f, .decay = 0.05f, .sustain = 20.0f }, end { .amount = 100.0f, .decay = 0.05f, .sustain = 70.0f };
+    const auto moved = render ({ .events = heldNote,
+                                 .setUp = withPositionEnvelope (start),
+                                 .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                 {
+                                     if (blockStart == changeSample)
+                                         setParameter (p, "positionSustain", 70.0f);
+                                 } });
+    const auto atEnd = render ({ .events = heldNote, .setUp = withPositionEnvelope (end) });
+    const auto difference = largestDifference (moved, atEnd, (size_t) changeSample + 960);
+    std::printf ("      sustain moved during a note: largest difference afterwards %.2e\n", difference);
+    check (difference < 1.0e-5, "changing the Position envelope's sustain reaches a note already playing");
+}
+
+void testPositionEnvelopeDoesntDependOnBlockSize()
+{
+    const auto renderInBlocks = [] (int blockSize)
+    {
+        return render ({ .blockSize = blockSize,
+                         .events = { { 0, noteOn (69) }, { 30000, noteOff (69) } },
+                         .setUp = withPositionEnvelope ({ .knob = 15.0f, .amount = 70.0f, .attack = 0.03f, .decay = 0.2f, .sustain = 40.0f, .release = 0.1f }) });
+    };
+
+    const auto in512 = renderInBlocks (512);
+    check (renderInBlocks (1) == in512 && renderInBlocks (64) == in512, "the Position envelope doesn't depend on the host's block size");
+}
+
+void testStolenNoteKeepsItsEnvelopesPosition()
+{
+    // Held at full, from the bottom of the knob, the envelope puts Position at 100 %. So the notes should
+    // be those of a knob at 100 %, including a stolen note as it fades out.
+    std::vector<TimedMessage> events;
+
+    for (int i = 0; i < 16; ++i)
+        events.push_back ({ 0, noteOn (40 + i) });
+
+    events.push_back ({ 4800, noteOn (70) });
+
+    const auto quieter = [] (juce::AudioProcessor& p) { setParameter (p, "volume", -12.0f); };
+    const auto byEnvelope = render ({ .numSamples = 9600, .events = events,
+                                      .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withPositionEnvelope ({ .amount = 100.0f, .sustain = 100.0f }) (p); } });
+    const auto byKnob = render ({ .numSamples = 9600, .events = events,
+                                  .setUp = [=] (juce::AudioProcessor& p) { quieter (p); withPosition (sineToSaw, 100.0f) (p); } });
+    check (byEnvelope == byKnob, "a stolen note fades out at the position its envelope had put it");
 }
 
 void testDefaultWaveformIsSine()
@@ -866,6 +1088,16 @@ void runSoundTests()
     testNoteStartsAtPosition();
     testPositionDoesntDependOnBlockSize();
     testStolenNoteKeepsItsPosition();
+    testPositionEnvelopeSweepsPosition();
+    testPositionEnvelopeReleases();
+    testPositionEnvelopeWithTheLfo();
+    testPositionEnvelopeStopsAtTheEnds();
+    testPositionEnvelopeDoesNothingUntilAsked();
+    testEveryNoteHasItsOwnPositionEnvelope();
+    testPositionEnvAmountGlides();
+    testPositionEnvelopeFollowsItsKnobs();
+    testPositionEnvelopeDoesntDependOnBlockSize();
+    testStolenNoteKeepsItsEnvelopesPosition();
     testAmpAttack();
     testAmpDecayAndSustain();
     testAmpRelease();

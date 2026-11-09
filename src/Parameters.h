@@ -16,6 +16,13 @@ constexpr const char* waveformId = "waveform";
 // a single frame.
 constexpr const char* wavetablePositionId = "wavetablePosition";
 
+// The Position envelope, which moves each note's wavetable position over time.
+constexpr const char* positionAttackId = "positionAttack";
+constexpr const char* positionDecayId = "positionDecay";
+constexpr const char* positionSustainId = "positionSustain";
+constexpr const char* positionReleaseId = "positionRelease";
+constexpr const char* positionEnvAmountId = "positionEnvAmount";
+
 // The amp (volume) envelope. "amp" to tell it apart from the filter envelope below.
 constexpr const char* ampAttackId = "ampAttack";
 constexpr const char* ampDecayId = "ampDecay";

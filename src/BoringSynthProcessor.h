@@ -13,7 +13,7 @@
 // (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
 // factory presets, which are also its programs (with one more for anything else), and your own. The
 // pitch wheel bends notes, the mod wheel can add to the LFO's depth, and the sustain pedal holds
-// notes. The parameters are the output volume, velocity sensitivity, pitch bend range, waveform, wavetable position, the amp envelope's attack, decay,
+// notes. The parameters are the output volume, velocity sensitivity, pitch bend range, waveform, wavetable position, its own envelope's attack, decay, sustain, release and amount, the amp envelope's attack, decay,
 // sustain and release, the filter's on/off switch, type, cutoff, resonance, key tracking, velocity
 // amount, and its own envelope's attack, decay, sustain, release and amount, the LFO's rate, depth,
 // destination and shape, how much the mod wheel adds to the LFO's depth, whether each note restarts
@@ -71,6 +71,11 @@ private:
     std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);
     std::atomic<float>* waveform = parameters.getRawParameterValue (waveformId);
     std::atomic<float>* wavetablePosition = parameters.getRawParameterValue (wavetablePositionId);
+    std::atomic<float>* positionAttack = parameters.getRawParameterValue (positionAttackId);
+    std::atomic<float>* positionDecay = parameters.getRawParameterValue (positionDecayId);
+    std::atomic<float>* positionSustain = parameters.getRawParameterValue (positionSustainId);
+    std::atomic<float>* positionRelease = parameters.getRawParameterValue (positionReleaseId);
+    std::atomic<float>* positionEnvAmount = parameters.getRawParameterValue (positionEnvAmountId);
     std::atomic<float>* ampAttack = parameters.getRawParameterValue (ampAttackId);
     std::atomic<float>* ampDecay = parameters.getRawParameterValue (ampDecayId);
     std::atomic<float>* ampSustain = parameters.getRawParameterValue (ampSustainId);

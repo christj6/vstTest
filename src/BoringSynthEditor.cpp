@@ -24,6 +24,8 @@ const std::vector<GroupLayout>& getLayout()
     static const std::vector<GroupLayout> layout {
         { "Global", 0, { { volumeId, "Volume" }, { velocitySensitivityId, "Velocity" }, { pitchBendRangeId, "Bend Range" } } },
         { "Oscillator", 0, { { waveformId, "Waveform" }, { wavetablePositionId, "Position" } } },
+        { "Position Envelope", 0, { { positionAttackId, "Attack" }, { positionDecayId, "Decay" }, { positionSustainId, "Sustain" },
+                                    { positionReleaseId, "Release" }, { positionEnvAmountId, "Amount" } } },
         { "Amp Envelope", 0, { { ampAttackId, "Attack" }, { ampDecayId, "Decay" }, { ampSustainId, "Sustain" }, { ampReleaseId, "Release" } } },
         { "Filter", 1, { { filterEnabledId, "On" }, { filterTypeId, "Type" }, { filterCutoffId, "Cutoff" },
                          { filterResonanceId, "Resonance" }, { filterKeyTrackingId, "Key Track" }, { filterVelocityId, "Velocity" } } },
@@ -113,8 +115,9 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
     {
         waveformAttachment = std::make_unique<juce::ParameterAttachment> (*waveform, [this] (float value)
         {
-            if (auto* position = findControl (wavetablePositionId))
-                position->setEnabled (juce::roundToInt (value) >= firstWavetable);
+            for (auto* id : { wavetablePositionId, positionAttackId, positionDecayId, positionSustainId, positionReleaseId, positionEnvAmountId })
+                if (auto* control = findControl (id))
+                    control->setEnabled (juce::roundToInt (value) >= firstWavetable);
         });
         waveformAttachment->sendInitialUpdate();
     }

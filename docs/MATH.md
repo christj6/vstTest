@@ -131,6 +131,10 @@ $$y = y_j + (q - j)\,(y_{j+1} - y_j), \qquad q = x\,(F - 1), \quad j = \lfloor q
 
 Exactly on a frame, $q - j = 0$, only that frame is read, so a waveform of one frame ($F = 1$) is unchanged at any Position.
 
+The note's $x$ is the knob's position $k$, moved by its own envelope $e$ (0 to 1) at amount $A$ (−1 to 1), and by the LFO $u$ at depth $d$ (section 9), limited to the table:
+
+$$x = \min\bigl(1, \max(0,\ k + A e + d u)\bigr)$$
+
 Sine to Saw's $F = 8$ frames are a straight blend of the sine and the loudness-matched saw (section 5), $a$ of the way from one to the other, with $a = f / 7$ for frame $f$:
 
 $$y_f(\varphi) = g_f\,\bigl(\sin\varphi + a\,(\sqrt{1.5}\,\text{saw}(\varphi) - \sin\varphi)\bigr)$$
@@ -288,7 +292,7 @@ With depth $d$ (0 to 1) and the LFO's value $u$ (−1 to 1):
 | Pitch | Multiplies the pitch by $2^{\,d^2 u}$: up to an octave either way. Squared, so most of the knob covers the small depths vibrato uses: 20 % is about ½ semitone. |
 | Volume | Multiplies the level by $1 - \tfrac{d}{2}(1 - u)$: full level at the LFO's peak, down to $1 - d$ at its trough. Never above 1. |
 | Filter cutoff | Moves it by $4 d u$ octaves. |
-| Position | Moves it by $d u$, added to the knob's position $x$ and kept to the table: $\min(1, \max(0, x + d u))$. |
+| Position | Moves it by $d u$ of the whole table (section 4). |
 
 The mod wheel $m$ (0 to 1) adds to the depth: $d = \min(1, d_\text{knob} + d_\text{wheel} \cdot m)$.
 

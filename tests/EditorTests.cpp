@@ -211,22 +211,34 @@ void testSyncGreysOutTheRateNotInUse()
 
 void testPositionGreyedOutWithoutAWavetable()
 {
-    // Position does nothing to a waveform of one frame, so it's greyed out, following automation too.
+    // Position and its envelope do nothing to a waveform of one frame, so they're greyed out, following
+    // automation too.
     OpenEditor open;
-    auto* position = open.control ("wavetablePosition");
+    bool greyedAtFirst = true, enabledOnWavetable = true, greyedOnSquare = true;
+    const auto ids = { "wavetablePosition", "positionAttack", "positionDecay", "positionSustain", "positionRelease", "positionEnvAmount" };
 
-    if (position == nullptr)
+    for (auto* id : ids)
     {
-        check (false, "the Position control exists");
-        return;
+        if (open.control (id) == nullptr)
+        {
+            check (false, "the Position and Position envelope controls exist");
+            return;
+        }
+
+        greyedAtFirst = greyedAtFirst && ! open.control (id)->isEnabled();
     }
 
-    const auto greyedAtFirst = ! position->isEnabled();
     setParameter (*open.processor, "waveform", 4.0f);
-    const auto enabledOnWavetable = position->isEnabled();
+
+    for (auto* id : ids)
+        enabledOnWavetable = enabledOnWavetable && open.control (id)->isEnabled();
+
     setParameter (*open.processor, "waveform", 3.0f);
-    const auto greyedOnSquare = ! position->isEnabled();
-    check (greyedAtFirst && enabledOnWavetable && greyedOnSquare, "Position is greyed out unless the waveform is a wavetable");
+
+    for (auto* id : ids)
+        greyedOnSquare = greyedOnSquare && ! open.control (id)->isEnabled();
+
+    check (greyedAtFirst && enabledOnWavetable && greyedOnSquare, "Position and its envelope are greyed out unless the waveform is a wavetable");
 }
 
 void testControlsFitAndDontOverlap()

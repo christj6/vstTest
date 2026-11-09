@@ -109,6 +109,13 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     wavetablePosition.reset (sampleRate, positionSmoothingSeconds);
     wavetablePosition.setCurrentAndTargetValue (parameters.wavetablePosition.load() / 100.0f);
 
+    // Every note gets its own Position envelope, starting from the beginning.
+    positionEnvelope.setSampleRate (sampleRate);
+    positionEnvelope.setSettings (getPositionEnvelopeSettings());
+    positionEnvelope.noteOn();
+    positionEnvAmount.reset (sampleRate, positionSmoothingSeconds);
+    positionEnvAmount.setCurrentAndTargetValue (parameters.positionEnvAmount.load() / 100.0f);
+
     phaseDelta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz (midiNote) / sampleRate;
     noteLevel = level * velocityToGain (velocity, parameters.velocitySensitivity.load() / 100.0f);
     noteNumber = midiNote;
@@ -161,6 +168,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
     {
         ampEnvelope.noteOff();
         filterEnvelope.noteOff();
+        positionEnvelope.noteOff();
         return;
     }
 
@@ -214,6 +222,8 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // A change of waveform during the note fades in rather than switching abruptly.
     oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
     wavetablePosition.setTargetValue (parameters.wavetablePosition.load() / 100.0f);
+    positionEnvAmount.setTargetValue (parameters.positionEnvAmount.load() / 100.0f);
+    positionEnvelope.setSettings (getPositionEnvelopeSettings());
 
     // Envelope and filter knob moves apply to the note already playing, though a release already under
     // way keeps the time it started with (see Envelope).
@@ -227,7 +237,9 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
         const auto filterEnvelopeLevel = filterEnvelope.getNextSample();
         lfoPitchRatio = modulation.getPitchRatio (i);
         lfoGain = modulation.getGain (i);
-        lastPosition = std::clamp (wavetablePosition.getNextValue() + modulation.getPositionOffset (i), 0.0f, 1.0f);
+        lastPosition = std::clamp (wavetablePosition.getNextValue() + positionEnvAmount.getNextValue() * positionEnvelope.getNextSample()
+                                       + modulation.getPositionOffset (i),
+                                   0.0f, 1.0f);
         const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio, lastPosition);
         const auto filtered = applyFilter (oscillatorSample, filterEnvelopeLevel, i);
         const auto sample = envelopeLevel * noteLevel * lfoGain * filtered;
@@ -411,6 +423,14 @@ Envelope::Settings SynthVoice::getAmpEnvelopeSettings() const
              parameters.ampDecay.load(),
              parameters.ampSustain.load() / 100.0f,
              parameters.ampRelease.load() };
+}
+
+Envelope::Settings SynthVoice::getPositionEnvelopeSettings() const
+{
+    return { parameters.positionAttack.load(),
+             parameters.positionDecay.load(),
+             parameters.positionSustain.load() / 100.0f,
+             parameters.positionRelease.load() };
 }
 
 Envelope::Settings SynthVoice::getFilterEnvelopeSettings() const

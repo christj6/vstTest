@@ -252,36 +252,6 @@ ProcessorSetUp withPositionLfo (float rateHz, float depthPercent, float knobPerc
     };
 }
 
-// What a held A4 note should be, worked out from the table itself: at each sample, Position is whatever
-// positionAt gives, at the level of a note at full velocity.
-std::vector<float> expectedTableNote (int numSamples, const std::function<double (int sample)>& positionAt)
-{
-    const juce::SharedResourcePointer<boringsynth::WaveformTables> tables;
-    const auto& table = tables->get (sineToSaw);
-    const auto phaseDelta = juce::MathConstants<double>::twoPi * 440.0 / testSampleRate;
-    const auto level = boringsynth::BandLimitedWaveTable::getLevelFor (phaseDelta);
-    std::vector<float> expected ((size_t) numSamples);
-    double phase = 0.0;
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        expected[(size_t) i] = 0.1f * table.getSample ((float) positionAt (i), level, phase);
-        phase = std::fmod (phase + phaseDelta, juce::MathConstants<double>::twoPi);
-    }
-
-    return expected;
-}
-
-double largestDifference (const std::vector<float>& a, const std::vector<float>& b, size_t from = 0)
-{
-    double largest = 0.0;
-
-    for (auto i = from; i < a.size(); ++i)
-        largest = std::max (largest, (double) std::abs (a[i] - b[i]));
-
-    return largest;
-}
-
 void testLfoMovesPosition()
 {
     // A rate that doesn't divide the note evenly. Position should be the knob plus depth times the LFO.

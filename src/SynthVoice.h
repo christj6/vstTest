@@ -32,6 +32,13 @@ struct VoiceParameters
     const std::atomic<float>& waveform;            // position in waveformNames, read on every block
     const std::atomic<float>& wavetablePosition;   // 0 to 100 %, read on every block
 
+    // The Position envelope, read on every block.
+    const std::atomic<float>& positionAttack;      // seconds
+    const std::atomic<float>& positionDecay;       // seconds
+    const std::atomic<float>& positionSustain;     // 0 to 100 %
+    const std::atomic<float>& positionRelease;     // seconds
+    const std::atomic<float>& positionEnvAmount;   // -100 to 100 %
+
     // The amp envelope, read on every block.
     const std::atomic<float>& ampAttack;           // seconds
     const std::atomic<float>& ampDecay;            // seconds
@@ -96,7 +103,12 @@ private:
     VoiceParameters parameters;
     Oscillator oscillator;
     juce::SmoothedValue<float> wavetablePosition; // the knob, 0 to 1
-    float lastPosition = 0.0f; // where the note last read, the LFO included, for a note that's cut off
+    float lastPosition = 0.0f; // where the note last read, all included, for a note that's cut off
+
+    // Moves the position up (or down) by positionEnvAmount at its peak. The envelope itself isn't
+    // smoothed, so fast sweeps stay sharp; only the amount knob glides.
+    Envelope positionEnvelope;
+    juce::SmoothedValue<float> positionEnvAmount; // -1 to 1
     double phaseDelta = 0.0;   // per sample, for the note's unbent pitch; 0 when the voice is idle
     float noteLevel = 0.0f;    // fixed per note: the base level scaled by velocity
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
@@ -144,6 +156,7 @@ private:
     const MultiFrameWaveTable& getCurrentTable() const;
     Envelope::Settings getAmpEnvelopeSettings() const;
     Envelope::Settings getFilterEnvelopeSettings() const;
+    Envelope::Settings getPositionEnvelopeSettings() const;
 };
 
 } // namespace boringsynth
