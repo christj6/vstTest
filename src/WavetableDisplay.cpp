@@ -16,9 +16,10 @@ constexpr float curveThickness = 1.5f;
 
 } // namespace
 
-WavetableDisplay::WavetableDisplay (const WaveformTables& waveformTables, const std::atomic<float>& waveform,
+WavetableDisplay::WavetableDisplay (const WaveformTables& waveformTables, const WavetableImporter& importer, const std::atomic<float>& waveform,
                                     const std::atomic<float>& knob, const std::atomic<float>& playedPosition)
     : tables (waveformTables),
+      wavetableImporter (importer),
       waveformValue (waveform),
       knobValue (knob),
       playedPositionValue (playedPosition)
@@ -36,15 +37,32 @@ void WavetableDisplay::refresh()
     const auto played = playedPositionValue.load();
     const auto position = played >= 0.0f ? played : knobValue.load() / 100.0f;
 
-    if (waveform == shownWaveform && position == shownPosition)
+    const auto generation = wavetableImporter.getGeneration();
+
+    if (waveform == shownWaveform && position == shownPosition && generation == shownGeneration)
         return;
 
-    if (waveform != shownWaveform)
-        peak = getPeak (tables.get (waveform));
+    if (waveform != shownWaveform || generation != shownGeneration)
+        readTable (waveform, [this] (const MultiFrameWaveTable& table) { peak = getPeak (table); });
 
     shownWaveform = waveform;
     shownPosition = position;
+    shownGeneration = generation;
     repaint();
+}
+
+void WavetableDisplay::readTable (int waveform, const std::function<void (const MultiFrameWaveTable&)>& reader) const
+{
+    if (waveform != importedWaveform)
+    {
+        reader (tables.get (waveform));
+        return;
+    }
+
+    wavetableImporter.readTable ([&] (const MultiFrameWaveTable* imported)
+    {
+        reader (imported != nullptr ? *imported : tables.get (waveform));
+    });
 }
 
 float WavetableDisplay::getPeak (const MultiFrameWaveTable& table)
@@ -55,16 +73,20 @@ float WavetableDisplay::getPeak (const MultiFrameWaveTable& table)
         for (int i = 0; i < WaveTable::size; ++i)
             largest = std::max (largest, std::abs (table.getFrame (frame).getLevel (0).getSample (juce::MathConstants<double>::twoPi * i / WaveTable::size)));
 
-    return largest;
+    // A silent table has nothing to scale.
+    return largest > 0.0f ? largest : 1.0f;
 }
 
 void WavetableDisplay::paint (juce::Graphics& g)
 {
-    const auto& table = tables.get (shownWaveform);
+    g.fillAll (findColour (juce::ComboBox::backgroundColourId));
+    readTable (shownWaveform, [&] (const MultiFrameWaveTable& table) { drawTable (g, table); });
+}
+
+void WavetableDisplay::drawTable (juce::Graphics& g, const MultiFrameWaveTable& table) const
+{
     const auto isWavetable = table.getNumFrames() > 1;
     const auto thumbColour = findColour (juce::Slider::thumbColourId);
-
-    g.fillAll (findColour (juce::ComboBox::backgroundColourId));
 
     auto area = getLocalBounds().toFloat().reduced (padding);
 

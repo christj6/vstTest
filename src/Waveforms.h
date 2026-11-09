@@ -10,10 +10,11 @@ namespace boringsynth
 // The waveforms the oscillator can play, in the order the Waveform parameter lists them. A DAW saves
 // the choice as its position in this list, so the order is permanent: new waveforms go at the end.
 inline const juce::StringArray waveformNames { "Sine", "Triangle", "Saw", "Square", "Sine to Saw", "Pulse Width",
-                                               "Hard Sync", "FM Sweep", "FM Hollow", "Wavefold", "Formant", "Harmonics" };
+                                               "Hard Sync", "FM Sweep", "FM Hollow", "Wavefold", "Formant", "Harmonics",
+                                               "Imported" };
 constexpr int sineWaveform = 0, triangleWaveform = 1, sawWaveform = 2, squareWaveform = 3, sineToSawWaveform = 4,
               pulseWidthWaveform = 5, hardSyncWaveform = 6, fmSweepWaveform = 7, fmHollowWaveform = 8, wavefoldWaveform = 9,
-              formantWaveform = 10, harmonicsWaveform = 11;
+              formantWaveform = 10, harmonicsWaveform = 11, importedWaveform = 12;
 
 // The waveforms from here on are wavetables, with several frames for Position to move through. Those
 // before have one frame, so Position does nothing to them.
@@ -35,7 +36,8 @@ class WaveformTables
 public:
     WaveformTables();
 
-    // The table for a waveform's position in waveformNames. Out-of-range values give the sine.
+    // The table for a waveform's position in waveformNames. Out-of-range values give the sine, as does
+    // Imported, which is each copy of the plug-in's own (see WavetableImporter).
     const MultiFrameWaveTable& get (int waveform) const noexcept;
 
 private:

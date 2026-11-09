@@ -58,6 +58,10 @@ constexpr int presetBarHeight = 28;
 constexpr int presetLabelWidth = 52;
 constexpr int presetMenuWidth = 260;
 constexpr int saveButtonWidth = 80;
+constexpr int loadWavetableButtonWidth = 130;
+
+// How often to check on a wavetable while it loads.
+constexpr int loadChecksPerSecond = 10;
 
 // Preset menu item IDs: the factory presets from 1, yours from 1001.
 constexpr int firstFactoryItemId = 1;
@@ -68,12 +72,13 @@ constexpr int noUserPresetsItemId = 1000;
 
 BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& state,
                                       PresetManager& presetManager, std::atomic<float>& windowScale, const WaveformTables& tables,
-                                      const std::atomic<float>& playedPosition)
+                                      WavetableImporter& importer, const std::atomic<float>& playedPosition)
     : AudioProcessorEditor (processor),
       parameters (state),
       presets (presetManager),
       scale (windowScale),
-      wavetableDisplay (tables, *state.getRawParameterValue (waveformId), *state.getRawParameterValue (wavetablePositionId), playedPosition)
+      wavetableDisplay (tables, importer, *state.getRawParameterValue (waveformId), *state.getRawParameterValue (wavetablePositionId), playedPosition),
+      wavetableImporter (importer)
 {
     presetLabel.setText ("Preset", juce::dontSendNotification);
     addAndMakeVisible (presetLabel);
@@ -90,6 +95,14 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
 
     refreshPresetMenu();
     presets.addChangeListener (this);
+
+    loadWavetableButton.setComponentID ("loadWavetable");
+    loadWavetableButton.onClick = [this] { chooseWavetable(); };
+    addAndMakeVisible (loadWavetableButton);
+
+    wavetableStatus.setComponentID ("wavetableStatus");
+    addAndMakeVisible (wavetableStatus);
+    showWavetableStatus();
 
     for (const auto& layout : getLayout())
     {
@@ -232,6 +245,54 @@ void BoringSynthEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     refreshPresetMenu();
 }
 
+//==============================================================================
+// Loading a wavetable.
+
+void BoringSynthEditor::chooseWavetable()
+{
+    wavetableChooser = std::make_unique<juce::FileChooser> ("Load a wavetable", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+    wavetableChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                   [this] (const juce::FileChooser& chooser)
+                                   {
+                                       if (chooser.getResult() != juce::File())
+                                           loadWavetable (chooser.getResult());
+                                   });
+}
+
+void BoringSynthEditor::loadWavetable (const juce::File& file)
+{
+    generationWhenLoading = wavetableImporter.getGeneration();
+    wavetableStatus.setText ("Loading " + file.getFileName() + "...", juce::dontSendNotification);
+    wavetableImporter.import (file);
+    startTimerHz (loadChecksPerSecond);
+}
+
+void BoringSynthEditor::timerCallback()
+{
+    if (wavetableImporter.isBusy())
+        return;
+
+    stopTimer();
+    showWavetableStatus();
+
+    // It's worked: play it. As one host gesture, like loading a preset.
+    if (wavetableImporter.getGeneration() != generationWhenLoading)
+    {
+        if (auto* waveform = parameters.getParameter (waveformId))
+        {
+            waveform->beginChangeGesture();
+            waveform->setValueNotifyingHost (waveform->convertTo0to1 ((float) importedWaveform));
+            waveform->endChangeGesture();
+        }
+    }
+}
+
+void BoringSynthEditor::showWavetableStatus()
+{
+    const auto status = wavetableImporter.getStatus();
+    wavetableStatus.setText (status.error.isNotEmpty() ? status.error : status.fileName, juce::dontSendNotification);
+}
+
 BoringSynthEditor::Control& BoringSynthEditor::addControl (const char* parameterId, const char* labelText)
 {
     auto& control = *controls.emplace_back (std::make_unique<Control>());
@@ -320,6 +381,10 @@ void BoringSynthEditor::resized()
     place (presetMenu, presetBar.removeFromLeft (presetMenuWidth));
     presetBar.removeFromLeft (gap);
     place (saveButton, presetBar.removeFromLeft (saveButtonWidth));
+    presetBar.removeFromLeft (gap);
+    place (loadWavetableButton, presetBar.removeFromLeft (loadWavetableButtonWidth));
+    presetBar.removeFromLeft (gap);
+    place (wavetableStatus, presetBar);
 
     // Rows narrower than the widest share out the spare width among their cells, so every row ends at
     // the same place. Each control keeps its own width, centred in its cell.

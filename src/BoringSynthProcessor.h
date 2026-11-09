@@ -4,10 +4,11 @@
 #include "PresetManager.h"
 #include "Synth.h"
 #include "Waveforms.h"
+#include "WavetableImporter.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-// A synth that plays one waveform (sine, triangle, saw, square or one of its wavetables) at the pitch of each held key,
+// A synth that plays one waveform (sine, triangle, saw, square, one of its wavetables or one you load) at the pitch of each held key,
 // through an optional resonant filter (low-pass, high-pass or band-pass), shaped by an ADSR amp
 // envelope. An LFO moves the pitch (vibrato), the volume (tremolo), the filter cutoff or the wavetable position. Its editor
 // (BoringSynthEditor) lays out a control for every parameter, under a preset menu (PresetManager):
@@ -66,10 +67,13 @@ public:
     // note playing. Updated with every block, and safe to read from any thread.
     float getPlayedPosition() const noexcept { return playedPosition.load(); }
 
+    WavetableImporter& getWavetableImporter() noexcept { return wavetableImporter; }
+
 private:
     // Declared before the synth, so they outlive the voices that read them. Shared with every other
     // copy of the plug-in, as building them takes a while and they never change.
     juce::SharedResourcePointer<WaveformTables> waveformTables;
+    WavetableImporter wavetableImporter;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
     PresetManager presets { parameters, PresetManager::getDefaultUserPresetFolder() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);

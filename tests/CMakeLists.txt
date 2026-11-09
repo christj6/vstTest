@@ -1,6 +1,7 @@
 # The plug-in's test program. NoteTests.cpp, ControlTests.cpp, SoundTests.cpp and LfoTests.cpp
 # render audio through the whole plug-in and check the output; ParameterTests.cpp checks parameters
-# and saved state, EditorTests.cpp the plug-in's window, and PresetTests.cpp its presets;
+# and saved state, EditorTests.cpp the plug-in's window, PresetTests.cpp its presets, and
+# ImportTests.cpp loading wavetables from files;
 # OscillatorTests.cpp, EnvelopeTests.cpp and FilterTests.cpp check those classes on their own.
 # ReferenceRender.cpp is the --record / --compare check, Benchmark.cpp is --benchmark, and
 # RenderTool.cpp is --render.
@@ -19,6 +20,7 @@ target_sources(Tests PRIVATE
     ParameterTests.cpp
     EditorTests.cpp
     PresetTests.cpp
+    ImportTests.cpp
     OscillatorTests.cpp
     EnvelopeTests.cpp
     FilterTests.cpp

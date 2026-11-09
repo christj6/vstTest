@@ -138,7 +138,7 @@ void testWaveformParameter()
     // A DAW saves the choice by position, so the list must keep this order forever. New waveforms
     // can only be added to the end.
     const juce::StringArray expected { "Sine", "Triangle", "Saw", "Square", "Sine to Saw", "Pulse Width",
-                                       "Hard Sync", "FM Sweep", "FM Hollow", "Wavefold", "Formant", "Harmonics" };
+                                       "Hard Sync", "FM Sweep", "FM Hollow", "Wavefold", "Formant", "Harmonics", "Imported" };
     bool inOrder = true;
 
     for (int i = 0; i < expected.size(); ++i)

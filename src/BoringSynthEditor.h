@@ -25,25 +25,31 @@ namespace boringsynth
 // smaller, from 75 % to 200 %, rather than laid out differently. The project remembers the size.
 //
 // Each control's component ID is its parameter's ID, so tests can find them; the preset menu's is
-// "presetMenu", the Save button's "savePreset" and the picture's "wavetableDisplay".
+// "presetMenu", the Save button's "savePreset", the picture's "wavetableDisplay", the Load wavetable
+// button's "loadWavetable", and the text beside it "wavetableStatus".
 class BoringSynthEditor  : public juce::AudioProcessorEditor,
-                           private juce::ChangeListener
+                           private juce::ChangeListener,
+                           private juce::Timer
 {
 public:
     // How big the window can be drawn, as a share of its normal size.
     static constexpr float minScale = 0.75f;
     static constexpr float maxScale = 2.0f;
 
-    // parameters, presets, scale, tables and playedPosition belong to the processor, or outlive it; all
-    // must outlive the editor, as JUCE ensures for a processor's editor. The window opens at scale, and
-    // keeps it up to date when resized. See WavetableDisplay for the last two.
+    // parameters, presets, scale, tables, importer and playedPosition belong to the processor, or outlive
+    // it; all must outlive the editor, as JUCE ensures for a processor's editor. The window opens at scale,
+    // and keeps it up to date when resized. See WavetableDisplay for the last three.
     BoringSynthEditor (juce::AudioProcessor& processor, juce::AudioProcessorValueTreeState& parameters,
                        PresetManager& presets, std::atomic<float>& scale, const WaveformTables& tables,
-                       const std::atomic<float>& playedPosition);
+                       WavetableImporter& importer, const std::atomic<float>& playedPosition);
     ~BoringSynthEditor() override;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
+
+    // Loads a wavetable, as choosing a file with the Load wavetable button does, and switches the
+    // waveform to Imported once it's loaded.
+    void loadWavetable (const juce::File& file);
 
 private:
     // The preset menu. It lists the presets afresh each time it opens, so ones saved since (by
@@ -93,6 +99,12 @@ private:
     juce::TextButton saveButton { "Save..." };
     juce::StringArray userPresetNames; // as the menu lists them
 
+    WavetableImporter& wavetableImporter;
+    juce::TextButton loadWavetableButton { "Load wavetable..." };
+    juce::Label wavetableStatus;
+    std::unique_ptr<juce::FileChooser> wavetableChooser;
+    int generationWhenLoading = 0; // the importer's, to tell whether a load has worked
+
     // The window's size at 100 %. Everything is laid out at this size, then drawn scaled to the window.
     int normalWidth = 0;
     int normalHeight = 0;
@@ -117,6 +129,10 @@ private:
     void askToSavePreset();
     void savePreset (const juce::String& name);
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+
+    void chooseWavetable();
+    void showWavetableStatus();
+    void timerCallback() override; // while a wavetable loads
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BoringSynthEditor)
 };

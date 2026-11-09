@@ -63,7 +63,7 @@ WaveformTables::WaveformTables()
     for (auto& wavetable : makeWavetables())
         tables.push_back (std::move (wavetable));
 
-    jassert ((int) tables.size() == waveformNames.size());
+    jassert ((int) tables.size() == importedWaveform);
 }
 
 const MultiFrameWaveTable& WaveformTables::get (int waveform) const noexcept

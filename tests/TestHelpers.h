@@ -207,6 +207,7 @@ void runLfoTests();
 void runParameterTests();
 void runEditorTests();
 void runPresetTests();
+void runImportTests();
 void runRenderToolTests();
 void runOscillatorTests();
 void runEnvelopeTests();

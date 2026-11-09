@@ -22,6 +22,10 @@ constexpr double waveformCrossfadeSeconds = 0.01;
 // How long Position takes to follow its knob, so moving it doesn't make a crackling "zipper" noise.
 constexpr double positionSmoothingSeconds = 0.02;
 
+// How long a note on a table that doesn't start at zero takes to fade in: the same as the shortest
+// release, which is short enough to sound instant and long enough not to click.
+constexpr double startFadeSeconds = 0.005;
+
 // How long a note that's cut off (for instance, when its voice is stolen) takes to fade out. The
 // same as the shortest release, which is short enough to sound instant and long enough not to click.
 constexpr double cutOffFadeSeconds = 0.005;
@@ -77,8 +81,10 @@ float movedCutoff (float cutoffHz, float octaves) noexcept
 
 } // namespace
 
-SynthVoice::SynthVoice (const WaveformTables& waveformTables, const Modulation& synthModulation, const VoiceParameters& voiceParameters)
+SynthVoice::SynthVoice (const WaveformTables& waveformTables, const WavetableImporter& importer, const Modulation& synthModulation,
+                        const VoiceParameters& voiceParameters)
     : tables (waveformTables),
+      wavetableImporter (importer),
       modulation (synthModulation),
       parameters (voiceParameters),
       oscillator (waveformTables.get (sineWaveform))
@@ -103,7 +109,11 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     }
 
     oscillator.reset();
-    oscillator.setTable (getCurrentTable(), 0);
+    const auto& table = getCurrentTable();
+    oscillator.setTable (table, 0);
+    startFadeLength = juce::jmax (1, juce::roundToInt (startFadeSeconds * sampleRate));
+    startFadeRemaining = table.startsAtZero() ? 0 : startFadeLength;
+    startFadeGain = 1.0f;
 
     // A note starts at the current position, not gliding to it.
     wavetablePosition.reset (sampleRate, positionSmoothingSeconds);
@@ -193,7 +203,7 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                                     filterTypeAmounts[1].getCurrentValue(),
                                     filterTypeAmounts[2].getCurrentValue() },
                                   phaseDelta * frequencyRatio.getCurrentValue() * lfoPitchRatio,
-                                  noteLevel * ampEnvelope.getLevel() * lfoGain,
+                                  noteLevel * ampEnvelope.getLevel() * lfoGain * startFadeGain,
                                   1.0f,
                                   (float) (1.0 / (cutOffFadeSeconds * getSampleRate())) };
     }
@@ -241,7 +251,18 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
                                        + modulation.getPositionOffset (i),
                                    0.0f, 1.0f);
         const auto oscillatorSample = oscillator.getNextSample (phaseDelta * frequencyRatio.getNextValue() * lfoPitchRatio, lastPosition);
-        const auto filtered = applyFilter (oscillatorSample, filterEnvelopeLevel, i);
+
+        if (startFadeRemaining > 0)
+        {
+            startFadeGain = (float) (startFadeLength - startFadeRemaining) / (float) startFadeLength;
+            --startFadeRemaining;
+        }
+        else
+        {
+            startFadeGain = 1.0f;
+        }
+
+        const auto filtered = applyFilter (startFadeGain * oscillatorSample, filterEnvelopeLevel, i);
         const auto sample = envelopeLevel * noteLevel * lfoGain * filtered;
 
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
@@ -414,7 +435,13 @@ double SynthVoice::getBendRatio() const
 
 const MultiFrameWaveTable& SynthVoice::getCurrentTable() const
 {
-    return tables.get (juce::roundToInt (parameters.waveform.load()));
+    const auto waveform = juce::roundToInt (parameters.waveform.load());
+
+    if (waveform == importedWaveform)
+        if (const auto* imported = wavetableImporter.getTable())
+            return *imported;
+
+    return tables.get (waveform);
 }
 
 Envelope::Settings SynthVoice::getAmpEnvelopeSettings() const

@@ -650,9 +650,9 @@ void testWavetableLibrary()
     double worstLoudness = 0.0, worstStart = 0.0, worstAlias = -1000.0, worstPeak = 0.0;
 
     // Past the end of the tables, asking for a waveform gives the sine.
-    const auto lastHasATable = &waveformTables().get (boringsynth::waveformNames.size() - 1) != &waveformTables().get (boringsynth::sineWaveform);
+    const auto lastHasATable = &waveformTables().get (boringsynth::importedWaveform - 1) != &waveformTables().get (boringsynth::sineWaveform);
 
-    for (int waveform = boringsynth::firstWavetable; waveform < boringsynth::waveformNames.size(); ++waveform)
+    for (int waveform = boringsynth::firstWavetable; waveform < boringsynth::importedWaveform; ++waveform)
     {
         const auto& table = waveformTables().get (waveform);
         const auto numFrames = table.getNumFrames();

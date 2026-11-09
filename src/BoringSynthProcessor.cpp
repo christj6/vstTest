@@ -90,7 +90,7 @@ BoringSynthProcessor::BoringSynthProcessor()
 
     for (int i = 0; i < numVoices; ++i)
     {
-        voices.push_back (new SynthVoice (*waveformTables, synth.getModulation(), voiceParameters));
+        voices.push_back (new SynthVoice (*waveformTables, wavetableImporter, synth.getModulation(), voiceParameters));
         synth.addVoice (voices.back());
     }
 
@@ -113,7 +113,7 @@ void BoringSynthProcessor::prepareToPlay (double sampleRate, int)
 
 juce::AudioProcessorEditor* BoringSynthProcessor::createEditor()
 {
-    return new BoringSynthEditor (*this, parameters, presets, editorScale, *waveformTables, playedPosition);
+    return new BoringSynthEditor (*this, parameters, presets, editorScale, *waveformTables, wavetableImporter, playedPosition);
 }
 
 bool BoringSynthProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -129,6 +129,7 @@ void BoringSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     synth.setTransport (readTransport (getPlayHead()));
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
     publishPlayedPosition();
+    wavetableImporter.blockRendered (buffer.getNumSamples());
     volumeGain.setTargetValue (getVolumeGain());
     volumeGain.applyGain (buffer, buffer.getNumSamples());
     protectOutput (buffer);

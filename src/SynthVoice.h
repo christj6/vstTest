@@ -6,6 +6,7 @@
 #include "Parameters.h"
 #include "Synth.h"
 #include "Waveforms.h"
+#include "WavetableImporter.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -67,10 +68,11 @@ struct VoiceParameters
 class SynthVoice  : public juce::SynthesiserVoice
 {
 public:
-    // waveformTables holds every waveform the voice can play, and modulation is the synth's LFO. The
-    // tables, the modulation and the parameter values must outlive the voice; the struct itself is
-    // copied.
-    SynthVoice (const WaveformTables& waveformTables, const Modulation& modulation, const VoiceParameters& voiceParameters);
+    // waveformTables holds every built-in waveform the voice can play, importer the Imported one, and
+    // modulation is the synth's LFO. They and the parameter values must outlive the voice; the struct
+    // itself is copied.
+    SynthVoice (const WaveformTables& waveformTables, const WavetableImporter& importer, const Modulation& modulation,
+                const VoiceParameters& voiceParameters);
 
     bool canPlaySound (juce::SynthesiserSound* sound) override;
     void startNote (int midiNote, float velocity, juce::SynthesiserSound*, int currentPitchWheelPosition) override;
@@ -102,6 +104,7 @@ private:
     };
 
     const WaveformTables& tables;
+    const WavetableImporter& wavetableImporter;
     const Modulation& modulation;
     VoiceParameters parameters;
     Oscillator oscillator;
@@ -117,6 +120,12 @@ private:
     float bendPosition = 0.0f; // the pitch wheel, from -1 (fully down) to 1 (fully up)
     int noteNumber = 60;       // the MIDI note playing, for the filter's key tracking
     float noteVelocity = 1.0f; // the note's velocity, 0 to 1, for velocity → filter
+
+    // A table that doesn't start at zero would click at the start of a note, so the note fades in. Counted
+    // in whole samples, so it ends on exactly its last sample; 0 for every other table.
+    int startFadeLength = 1;
+    int startFadeRemaining = 0;
+    float startFadeGain = 1.0f; // where the fade last was, for a note that's cut off
     Envelope ampEnvelope;
 
     // Notes fading out, each in a slot of its own, so a note cut off while an earlier one is still

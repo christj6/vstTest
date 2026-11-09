@@ -451,7 +451,8 @@ void testControlsFitAndDontOverlap()
     OpenEditor open;
     const auto normalWidth = open.editor->getWidth();
     const auto normalHeight = open.editor->getHeight();
-    std::vector<juce::Component*> controls { open.control ("presetMenu"), open.control ("savePreset"), open.control ("wavetableDisplay") };
+    std::vector<juce::Component*> controls { open.control ("presetMenu"), open.control ("savePreset"), open.control ("wavetableDisplay"),
+                                             open.control ("loadWavetable"), open.control ("wavetableStatus") };
 
     for (auto* parameter : open.processor->getParameters())
         if (auto* control = open.control (dynamic_cast<juce::RangedAudioParameter*> (parameter)->getParameterID()))

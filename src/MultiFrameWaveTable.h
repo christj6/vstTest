@@ -20,7 +20,14 @@ public:
     // numFrames frames, at least one, where shape gives each frame's value at a phase (see WaveTable).
     MultiFrameWaveTable (int numFrames, const std::function<float (int frame, double phase)>& shape);
 
+    // A frame for each of cycles, each exactly WaveTable::size samples.
+    explicit MultiFrameWaveTable (const std::vector<std::vector<float>>& cycles);
+
     int getNumFrames() const noexcept { return (int) frames.size(); }
+
+    // Whether every frame is zero at phase 0, at every level. Notes start there, so if not, a note
+    // starting at full level would click.
+    bool startsAtZero() const noexcept { return everyFrameStartsAtZero; }
 
     const BandLimitedWaveTable& getFrame (int frame) const noexcept { return frames[(size_t) frame]; }
 
@@ -46,6 +53,7 @@ public:
 
 private:
     std::vector<BandLimitedWaveTable> frames;
+    bool everyFrameStartsAtZero = true;
 };
 
 } // namespace boringsynth

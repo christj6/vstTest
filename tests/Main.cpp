@@ -55,6 +55,7 @@ int main (int argc, char** argv)
     testing::runParameterTests();
     testing::runEditorTests();
     testing::runPresetTests();
+    testing::runImportTests();
     testing::runRenderToolTests();
     testing::runReferenceRenderTests();
     testing::runOscillatorTests();

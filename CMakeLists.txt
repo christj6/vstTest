@@ -35,6 +35,8 @@ set(BORINGSYNTH_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WaveTable.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableDisplay.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableDisplay.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableImporter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableImporter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableLibrary.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WavetableLibrary.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Waveforms.cpp

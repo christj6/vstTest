@@ -35,11 +35,7 @@ MultiFrameWaveTable makeTable (int numFrames, const std::function<double (double
             cycles[(size_t) frame][(size_t) i] = (float) (gain * values[(size_t) i]);
     }
 
-    // The frames ask for exactly the phases above, so each lands on one of the samples worked out.
-    return { numFrames, [&cycles] (int frame, double phase)
-    {
-        return cycles[(size_t) frame][(size_t) juce::roundToInt (phase * size / juce::MathConstants<double>::twoPi)];
-    } };
+    return MultiFrameWaveTable (cycles);
 }
 
 // The phase measured from the middle of the cycle's start, from -pi up to pi: a function that's odd in
