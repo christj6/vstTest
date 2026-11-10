@@ -240,9 +240,13 @@ void BoringSynthEditor::savePreset (const juce::String& name)
                                                 {}, this);
 }
 
+// A preset or project loaded, which may have brought a wavetable of its own.
 void BoringSynthEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     refreshPresetMenu();
+
+    if (! isTimerRunning())
+        showWavetableStatus();
 }
 
 //==============================================================================

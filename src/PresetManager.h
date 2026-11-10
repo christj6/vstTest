@@ -1,5 +1,7 @@
 #pragma once
 
+#include "WavetableImporter.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 namespace boringsynth
@@ -8,7 +10,8 @@ namespace boringsynth
 // Loads and saves presets: the built-in factory presets (FactoryPresets.h), and your own, saved as
 // files. A preset file is the same XML as the plug-in's saved state (parameter IDs and values, with
 // its state version), so it's readable, and a preset saved before a parameter existed loads with
-// that parameter at its default.
+// that parameter at its default. One of yours also holds the imported wavetable, if one was loaded
+// (see WavetableImporter); loading a preset without one leaves the loaded table alone.
 //
 // Also keeps the name of the current preset, which is saved with the project, and tells listeners
 // (the editor) when it changes. Everything here is for the message thread, except
@@ -17,8 +20,8 @@ namespace boringsynth
 class PresetManager  : public juce::ChangeBroadcaster
 {
 public:
-    // The parameters must outlive this.
-    PresetManager (juce::AudioProcessorValueTreeState& parameters, const juce::File& userPresetFolder);
+    // The parameters and importer must outlive this.
+    PresetManager (juce::AudioProcessorValueTreeState& parameters, WavetableImporter& importer, const juce::File& userPresetFolder);
 
     // Where your presets go: Documents/BoringSynth/Presets. Only created when you first save one.
     static juce::File getDefaultUserPresetFolder();
@@ -55,6 +58,7 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState& parameters;
+    WavetableImporter& wavetableImporter;
     juce::File userPresetFolder;
     juce::String currentName;
     int currentFactoryPreset = 0;

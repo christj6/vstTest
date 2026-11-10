@@ -166,26 +166,126 @@ void WavetableImporter::run()
 
 void WavetableImporter::loadFile (const juce::File& file)
 {
-    const auto cycles = readCycles (file);
+    auto read = readCycles (file);
 
-    if (cycles.frames.empty())
+    if (read.frames.empty())
     {
         const juce::ScopedLock sl (lock);
-        status.error = file.getFileName() + ": " + cycles.error;
+        status.error = file.getFileName() + ": " + read.error;
         return;
     }
 
-    auto newTable = std::make_unique<MultiFrameWaveTable> (cycles.frames);
+    auto newTable = std::make_unique<MultiFrameWaveTable> (read.frames);
+    publish (std::move (newTable), std::move (read.frames), { file.getFileName(), {} });
+}
 
+void WavetableImporter::publish (std::unique_ptr<MultiFrameWaveTable> newTable, std::vector<std::vector<float>> newCycles, const Status& newStatus)
+{
+    {
+        const juce::ScopedLock sl (lock);
+
+        if (table != nullptr)
+            oldTables.push_back ({ std::move (table), blocksRendered.load(), samplesRendered.load() });
+
+        table = std::move (newTable);
+        cycles = std::move (newCycles);
+        current.store (table.get(), std::memory_order_release);
+        status = newStatus;
+        ++generation;
+    }
+
+    // The thread frees the old table, once it's safe.
+    if (! isThreadRunning())
+        startThread();
+
+    notify();
+}
+
+void WavetableImporter::clear()
+{
+    if (getTable() != nullptr)
+        publish (nullptr, {}, {});
+}
+
+void WavetableImporter::writeTo (juce::ValueTree& state) const
+{
     const juce::ScopedLock sl (lock);
 
-    if (table != nullptr)
-        oldTables.push_back ({ std::move (table), blocksRendered.load(), samplesRendered.load() });
+    if (table == nullptr)
+        return;
 
-    table = std::move (newTable);
-    current.store (table.get(), std::memory_order_release);
-    status = { file.getFileName(), {} };
-    ++generation;
+    // Each sample as a 32-bit float, little-endian whatever the computer, so a project moves between them.
+    juce::MemoryBlock data (cycles.size() * (size_t) WaveTable::size * sizeof (juce::uint32));
+    auto* bytes = static_cast<juce::uint32*> (data.getData());
+
+    for (const auto& cycle : cycles)
+    {
+        for (auto sample : cycle)
+        {
+            juce::uint32 bits;
+            std::memcpy (&bits, &sample, sizeof (bits));
+            *bytes++ = juce::ByteOrder::swapIfBigEndian (bits);
+        }
+    }
+
+    juce::ValueTree saved (stateChildId);
+    saved.setProperty ("name", status.fileName, nullptr);
+    saved.setProperty ("frames", (int) cycles.size(), nullptr);
+    saved.setProperty ("data", juce::Base64::toBase64 (data.getData(), data.getSize()), nullptr);
+    state.appendChild (saved, nullptr);
+}
+
+void WavetableImporter::readFrom (const juce::ValueTree& state, IfNoneSaved ifNoneSaved)
+{
+    const auto saved = state.getChildWithName (stateChildId);
+
+    if (! saved.isValid())
+    {
+        if (ifNoneSaved == IfNoneSaved::clear)
+            clear();
+
+        return;
+    }
+
+    const auto name = saved.getProperty ("name").toString();
+    const auto numFrames = (int) saved.getProperty ("frames", 0);
+    // Plain base64, which says nothing about its own length: so a copy cut short comes out short, and
+    // is refused below.
+    juce::MemoryOutputStream decodedData;
+    const auto decoded = juce::Base64::convertFromBase64 (decodedData, saved.getProperty ("data").toString());
+    const auto data = decodedData.getMemoryBlock();
+
+    if (! decoded || numFrames < 1 || numFrames > maxFrames || data.getSize() != (size_t) numFrames * WaveTable::size * sizeof (juce::uint32))
+    {
+        if (getTable() != nullptr)
+            publish (nullptr, {}, { {}, name + ": the wavetable saved here couldn't be read" });
+        else
+        {
+            const juce::ScopedLock sl (lock);
+            status = { {}, name + ": the wavetable saved here couldn't be read" };
+        }
+
+        return;
+    }
+
+    std::vector<std::vector<float>> frames ((size_t) numFrames, std::vector<float> ((size_t) WaveTable::size));
+    const auto* bytes = static_cast<const juce::uint32*> (data.getData());
+
+    for (auto& frame : frames)
+    {
+        for (auto& sample : frame)
+        {
+            const auto bits = juce::ByteOrder::swapIfBigEndian (*bytes++);
+            std::memcpy (&sample, &bits, sizeof (sample));
+
+            if (! std::isfinite (sample))
+                sample = 0.0f;
+        }
+    }
+
+    // Built here, not on the thread, so it's ready before this returns.
+    auto newTable = std::make_unique<MultiFrameWaveTable> (frames);
+    publish (std::move (newTable), std::move (frames), { name, {} });
 }
 
 void WavetableImporter::freeOldTables()

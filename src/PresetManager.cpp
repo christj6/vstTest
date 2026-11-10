@@ -38,8 +38,9 @@ void setEveryParameter (juce::AudioProcessor& processor, ValueFor valueFor)
 
 } // namespace
 
-PresetManager::PresetManager (juce::AudioProcessorValueTreeState& state, const juce::File& folder)
+PresetManager::PresetManager (juce::AudioProcessorValueTreeState& state, WavetableImporter& importer, const juce::File& folder)
     : parameters (state),
+      wavetableImporter (importer),
       userPresetFolder (folder),
       currentName (getFactoryPresets().front().name)
 {
@@ -147,6 +148,7 @@ std::unique_ptr<juce::XmlElement> PresetManager::createPresetXml() const
 {
     auto state = parameters.copyState();
     state.setProperty (stateVersionId, currentStateVersion, nullptr);
+    wavetableImporter.writeTo (state);
     return state.createXml();
 }
 
@@ -154,6 +156,14 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
 {
     if (! xml.hasTagName (stateTag) || xml.getIntAttribute (stateVersionId, currentStateVersion) > currentStateVersion)
         return false;
+
+    // Its imported wavetable first, if it has one, so it's ready when Waveform turns to it.
+    if (const auto* saved = xml.getChildByName (WavetableImporter::stateChildId))
+    {
+        juce::ValueTree state (stateTag);
+        state.appendChild (juce::ValueTree::fromXml (*saved), nullptr);
+        wavetableImporter.readFrom (state, WavetableImporter::IfNoneSaved::keep);
+    }
 
     // A parameter the preset doesn't hold (one saved before the parameter existed) goes back to its
     // default, as an older project's would.

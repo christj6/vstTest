@@ -189,6 +189,7 @@ void BoringSynthProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty (stateVersionId, currentStateVersion, nullptr);
     presets.writeTo (state);
     state.setProperty (editorScaleId, editorScale.load(), nullptr);
+    wavetableImporter.writeTo (state);
 
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -203,7 +204,12 @@ void BoringSynthProcessor::setStateInformation (const void* data, int sizeInByte
     if (xml == nullptr || ! xml->hasTagName (stateTag))
         return;
 
-    const auto state = juce::ValueTree::fromXml (*xml);
+    auto state = juce::ValueTree::fromXml (*xml);
+
+    // Its imported wavetable first, so it's ready when Waveform turns to it. It isn't a parameter, so it
+    // isn't left among them.
+    wavetableImporter.readFrom (state, WavetableImporter::IfNoneSaved::clear);
+    state.removeChild (state.getChildWithName (WavetableImporter::stateChildId), nullptr);
     parameters.replaceState (state);
     presets.readFrom (state);
 

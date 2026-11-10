@@ -516,6 +516,231 @@ void testEveryCopyHasItsOwn()
 }
 
 //==============================================================================
+// Saving with projects and presets.
+
+std::unique_ptr<juce::AudioProcessor> reopened (juce::AudioProcessor& from, juce::MemoryBlock* stateOut = nullptr)
+{
+    juce::MemoryBlock state;
+    from.getStateInformation (state);
+    std::unique_ptr<juce::AudioProcessor> to (createPluginFilter());
+    to->setStateInformation (state.getData(), (int) state.getSize());
+
+    if (stateOut != nullptr)
+        *stateOut = state;
+
+    return to;
+}
+
+std::vector<float> renderHeldNote (juce::AudioProcessor& processor)
+{
+    processor.prepareToPlay (testSampleRate, 512);
+    juce::AudioBuffer<float> buffer (1, 512);
+    std::vector<float> output;
+
+    for (int block = 0; block < 40; ++block)
+    {
+        juce::MidiBuffer midi;
+
+        if (block == 0)
+            midi.addEvent (noteOn (57), 0);
+
+        buffer.clear();
+        processor.processBlock (buffer, midi);
+        output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 512);
+    }
+
+    return output;
+}
+
+void testSavedWithTheProject()
+{
+    std::unique_ptr<juce::AudioProcessor> original (createPluginFilter());
+    juce::MemoryBlock state;
+    std::unique_ptr<juce::AudioProcessor> restored;
+    juce::String fileName;
+
+    {
+        // The file is deleted before the project's opened again: the table is in the project.
+        const WavFile file ({ joined ({ makeFrame (sineShape), makeFrame (cosineShape), makeFrame (thirdHarmonicShape) }) });
+        fileName = file.file().getFileName();
+        setParameter (*original, "waveform", (float) imported);
+        setParameter (*original, "wavetablePosition", 40.0f);
+        importAndWait (*original, file.file());
+    }
+
+    restored = reopened (*original, &state);
+    auto& importer = asSynth (*restored).getWavetableImporter();
+    std::printf ("      a project with a 3-frame table: %d bytes\n", (int) state.getSize());
+    check (importer.getTable() != nullptr && importer.getTable()->getNumFrames() == 3 && importer.getStatus().fileName == fileName,
+           "a project reopens with its imported wavetable, named, though the file's gone");
+    check (! importer.isBusy(), "it's ready as soon as the project's loaded, before any audio");
+    check (renderHeldNote (*original) == renderHeldNote (*restored), "and sounds exactly as it did");
+
+    // The table isn't left among the parameters, where it would be saved twice.
+    juce::MemoryBlock again;
+    restored->getStateInformation (again);
+    const auto xml = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
+    int saved = 0;
+
+    if (xml != nullptr)
+        for (auto* child : xml->getChildIterator())
+            saved += child->hasTagName (WavetableImporter::stateChildId) ? 1 : 0;
+
+    check (saved == 1 && std::abs ((int) again.getSize() - (int) state.getSize()) < 100, "saved again, it's saved once, the same size");
+}
+
+void testProjectWithoutATable()
+{
+    // A project saved with no table, as every one before this was, clears whatever's loaded.
+    std::unique_ptr<juce::AudioProcessor> withTable (createPluginFilter()), without (createPluginFilter());
+    const WavFile file ({ makeFrame (thirdHarmonicShape) });
+    importAndWait (*withTable, file.file());
+
+    juce::MemoryBlock state;
+    without->getStateInformation (state);
+    withTable->setStateInformation (state.getData(), (int) state.getSize());
+    check (asSynth (*withTable).getWavetableImporter().getTable() == nullptr, "a project without an imported wavetable unloads the one loaded");
+}
+
+void testDamagedSavedTable()
+{
+    // A saved table that's been cut short: the project still opens, its parameters loaded, with no
+    // table and a reason why.
+    std::unique_ptr<juce::AudioProcessor> original (createPluginFilter());
+    const WavFile file ({ joined ({ makeFrame (sineShape), makeFrame (cosineShape) }) });
+    importAndWait (*original, file.file());
+    setParameter (*original, "volume", -7.0f);
+
+    juce::MemoryBlock state;
+    original->getStateInformation (state);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
+    auto* saved = xml != nullptr ? xml->getChildByName (WavetableImporter::stateChildId) : nullptr;
+
+    if (saved == nullptr)
+    {
+        check (false, "a saved project holds its imported wavetable");
+        return;
+    }
+
+    for (auto damage : { 0, 1 })
+    {
+        auto damaged = std::make_unique<juce::XmlElement> (*xml);
+        auto* table = damaged->getChildByName (WavetableImporter::stateChildId);
+
+        if (damage == 0)
+        {
+            table->setAttribute ("data", table->getStringAttribute ("data").dropLastCharacters (400));
+        }
+        else
+        {
+            // Consistent, but past the limit: a file couldn't have given this.
+            const juce::MemoryBlock tooMany ((size_t) 257 * frameSize * sizeof (float), true);
+            table->setAttribute ("frames", 257);
+            table->setAttribute ("data", juce::Base64::toBase64 (tooMany.getData(), tooMany.getSize()));
+        }
+
+        juce::MemoryBlock damagedState;
+        juce::AudioProcessor::copyXmlToBinary (*damaged, damagedState);
+        std::unique_ptr<juce::AudioProcessor> restored (createPluginFilter());
+        const WavFile other ({ makeFrame (thirdHarmonicShape) });
+        importAndWait (*restored, other.file());
+        restored->setStateInformation (damagedState.getData(), (int) damagedState.getSize());
+
+        const auto status = asSynth (*restored).getWavetableImporter().getStatus();
+        std::printf ("      a damaged saved table: '%s'\n", status.error.toRawUTF8());
+        check (asSynth (*restored).getWavetableImporter().getTable() == nullptr && status.error.contains ("couldn't be read")
+                   && std::abs (getParameter (*restored, "volume") + 7.0f) < 0.01f,
+               damage == 0 ? "a saved table cut short is refused, saying why, and the rest of the project loads"
+                           : "a saved table claiming too many frames is refused, saying why, and the rest of the project loads");
+    }
+}
+
+void testSavedInPresets()
+{
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("BoringSynth import preset test");
+    folder.deleteRecursively();
+
+    std::unique_ptr<juce::AudioProcessor> saver (createPluginFilter()), loader (createPluginFilter());
+
+    for (auto* processor : { saver.get(), loader.get() })
+        asSynth (*processor).getPresetManager().setUserPresetFolder (folder);
+
+    // A preset saved with a table brings it with it.
+    {
+        const WavFile file ({ joined ({ makeFrame (sineShape), makeFrame (thirdHarmonicShape) }) });
+        importAndWait (*saver, file.file());
+        setParameter (*saver, "waveform", (float) imported);
+        asSynth (*saver).getPresetManager().saveUserPreset ("With a table");
+    }
+
+    asSynth (*loader).getPresetManager().loadUserPreset ("With a table");
+    const auto* loaded = asSynth (*loader).getWavetableImporter().getTable();
+    check (loaded != nullptr && loaded->getNumFrames() == 2 && getParameter (*loader, "waveform") == (float) imported,
+           "a preset of your own brings its imported wavetable with it");
+    check (renderHeldNote (*saver) == renderHeldNote (*loader), "and sounds exactly as it did");
+
+    // One saved without a table, or a factory preset, leaves the loaded table alone.
+    std::unique_ptr<juce::AudioProcessor> plain (createPluginFilter());
+    asSynth (*plain).getPresetManager().setUserPresetFolder (folder);
+    asSynth (*plain).getPresetManager().saveUserPreset ("Without a table");
+    asSynth (*loader).getPresetManager().loadUserPreset ("Without a table");
+    check (asSynth (*loader).getWavetableImporter().getTable() == loaded, "a preset without one leaves the loaded table alone");
+
+    asSynth (*loader).getPresetManager().loadFactoryPreset (3);
+    check (asSynth (*loader).getWavetableImporter().getTable() == loaded, "and so does a factory preset");
+
+    const auto presetFile = folder.getChildFile ("With a table.xml");
+    std::printf ("      a preset with a 2-frame table: %d bytes\n", (int) presetFile.getSize());
+    folder.deleteRecursively();
+}
+
+void testLargestTableSaved()
+{
+    // The most a file can have: 256 frames, through a whole round trip.
+    std::vector<std::vector<float>> frames;
+
+    for (int i = 0; i < 256; ++i)
+        frames.push_back (makeFrame ([i] (double phase) { return std::sin (phase) + 0.01 * i * std::sin (2.0 * phase); }));
+
+    const WavFile file ({ joined (frames) });
+    std::unique_ptr<juce::AudioProcessor> original (createPluginFilter());
+    importAndWait (*original, file.file());
+
+    juce::MemoryBlock state;
+    const auto start = juce::Time::getMillisecondCounterHiRes();
+    auto restored = reopened (*original, &state);
+    const auto table = asSynth (*restored).getWavetableImporter().getTable();
+    std::printf ("      a project with 256 frames: %.1f MB, saved and reopened in %.0f ms\n", (double) state.getSize() / 1.0e6,
+                 juce::Time::getMillisecondCounterHiRes() - start);
+    check (table != nullptr && table->getNumFrames() == 256, "a project keeps a wavetable of 256 frames");
+}
+
+void testWindowShowsTheReopenedTable()
+{
+    // A project opened with the window open: the text by the Load wavetable button names its table.
+    std::unique_ptr<juce::AudioProcessor> original (createPluginFilter()), other (createPluginFilter());
+    const WavFile file ({ makeFrame (thirdHarmonicShape) });
+    importAndWait (*original, file.file());
+    juce::MemoryBlock state;
+    original->getStateInformation (state);
+
+    auto* editor = other->createEditorAndMakeActive();
+    auto* status = editor != nullptr ? dynamic_cast<juce::Label*> (editor->findChildWithID ("wavetableStatus")) : nullptr;
+    other->setStateInformation (state.getData(), (int) state.getSize());
+
+    // The window hears about it as a message, which a host's message loop would deliver.
+    asSynth (*other).getPresetManager().dispatchPendingMessages();
+
+    check (status != nullptr && status->getText() == file.file().getFileName(), "an open window names the table a project brings");
+
+    if (editor != nullptr)
+    {
+        other->editorBeingDeleted (editor);
+        delete editor;
+    }
+}
+
+//==============================================================================
 void testLoadingFromTheWindow()
 {
     std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
@@ -611,6 +836,12 @@ void runImportTests()
     testOldTablesWaitForTheAudio();
     testReplacingTablesWhilePlaying();
     testEveryCopyHasItsOwn();
+    testSavedWithTheProject();
+    testProjectWithoutATable();
+    testDamagedSavedTable();
+    testSavedInPresets();
+    testLargestTableSaved();
+    testWindowShowsTheReopenedTable();
     testLoadingFromTheWindow();
 }
 

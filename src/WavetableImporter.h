@@ -3,6 +3,7 @@
 #include "MultiFrameWaveTable.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_data_structures/juce_data_structures.h>
 
 #include <atomic>
 #include <functional>
@@ -67,6 +68,21 @@ public:
     // How many old tables are still waiting to be freed.
     int getNumOldTables() const;
 
+    // The loaded table is saved with projects and presets, embedded: a child of the saved state named
+    // stateChildId, holding the file's name and its frames as processed, as 32-bit little-endian floats
+    // in base64, so it loads the same even if the file has moved or gone. Not on the audio thread.
+    static constexpr const char* stateChildId = "ImportedWavetable";
+    void writeTo (juce::ValueTree& state) const;
+
+    // Loads the table saved in a state, if it holds one, building it before returning, so a host that
+    // starts rendering straight away hears it. Without one, a project clears the table and a preset keeps
+    // it. A saved table that can't be read clears it, saying why. Not on the audio thread.
+    enum class IfNoneSaved { clear, keep };
+    void readFrom (const juce::ValueTree& state, IfNoneSaved ifNoneSaved);
+
+    // Unloads the table, so Imported plays a sine. Not on the audio thread.
+    void clear();
+
     // What a file's frames would be, processed as above, or empty with the reason why not.
     struct Cycles
     {
@@ -88,6 +104,7 @@ private:
     juce::File pendingFile;
     Status status;
     std::unique_ptr<MultiFrameWaveTable> table;
+    std::vector<std::vector<float>> cycles; // the table's frames, as processed, for saving
     std::vector<OldTable> oldTables;
 
     std::atomic<const MultiFrameWaveTable*> current { nullptr };
@@ -99,6 +116,9 @@ private:
     void run() override;
     void loadFile (const juce::File& file);
     void freeOldTables();
+
+    // Hands the audio thread a new table (or none), keeping the old one to free later.
+    void publish (std::unique_ptr<MultiFrameWaveTable> newTable, std::vector<std::vector<float>> newCycles, const Status& newStatus);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WavetableImporter)
 };

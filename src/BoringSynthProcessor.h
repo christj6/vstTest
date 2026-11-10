@@ -75,7 +75,7 @@ private:
     juce::SharedResourcePointer<WaveformTables> waveformTables;
     WavetableImporter wavetableImporter;
     juce::AudioProcessorValueTreeState parameters { *this, nullptr, stateTag, createParameterLayout() };
-    PresetManager presets { parameters, PresetManager::getDefaultUserPresetFolder() };
+    PresetManager presets { parameters, wavetableImporter, PresetManager::getDefaultUserPresetFolder() };
     std::atomic<float>* volumeDb = parameters.getRawParameterValue (volumeId);
     std::atomic<float>* velocitySensitivity = parameters.getRawParameterValue (velocitySensitivityId);
     std::atomic<float>* pitchBendRange = parameters.getRawParameterValue (pitchBendRangeId);
