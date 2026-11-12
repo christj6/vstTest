@@ -105,7 +105,6 @@ void Synth::renderVoices (juce::AudioBuffer<float>& outputAudio, int startSample
             modulation.pitchRatios[(size_t) i] = std::exp2 (lfoPitchSemitones (pitchDepth) * lfoValue / 12.0f);
             modulation.gains[(size_t) i] = lfoGain (volumeDepth, lfoValue);
             modulation.cutoffOctaves[(size_t) i] = maxLfoCutoffOctaves * cutoffDepth * lfoValue;
-            modulation.cutoffMoving[(size_t) i] = cutoffDepth != 0.0f;
             modulation.positionOffsets[(size_t) i] = positionDepth * lfoValue;
         }
 

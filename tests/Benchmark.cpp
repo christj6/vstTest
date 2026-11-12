@@ -112,8 +112,18 @@ int runBenchmark()
               setParameter (p, "positionEnvAmount", 100.0f);
           } },
 
+        // The filter on, but nothing moving it: the cost of running it, and no more.
+        { "16 notes, saw, filter still", true, false,
+          [] (juce::AudioProcessor& p)
+          {
+              setParameter (p, "waveform", 2.0f);
+              setParameter (p, "filterEnabled", 1.0f);
+              setParameter (p, "filterCutoff", 800.0f);
+              setParameter (p, "filterResonance", 50.0f);
+          } },
+
         // A moving filter: its cutoff changes on every block, so every voice keeps working out its
-        // filter coefficients again (every 8 samples).
+        // filter coefficients again.
         { "16 notes, saw, filter cutoff moving", true, false,
           [] (juce::AudioProcessor& p)
           {
@@ -147,8 +157,7 @@ int runBenchmark()
               setParameter (p, "lfoDepth", 20.0f);
           } },
 
-        // The LFO sweeping the cutoff: every voice works out its filter coefficients again (every 8
-        // samples) all the time.
+        // The LFO sweeping the cutoff: every voice works out its filter coefficients again all the time.
         { "16 notes, saw, LFO on filter cutoff", true, false,
           [] (juce::AudioProcessor& p)
           {

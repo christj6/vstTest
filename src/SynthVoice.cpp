@@ -37,12 +37,6 @@ constexpr double filterSmoothingSeconds = 0.02;
 // How long switching the filter on or off takes to crossfade between the two sounds.
 constexpr double filterSwitchSeconds = 0.01;
 
-// While the cutoff or resonance glides, the filter's coefficients are worked out again every this
-// many samples rather than every sample. That takes a tangent and a power, so this cuts the cost of
-// a moving filter several times over. 8 samples is under 0.2 ms, and no steps have been heard; a
-// high resonance swept fast is where they'd show first, if anywhere.
-constexpr int filterUpdateInterval = 8;
-
 // The note at which key tracking leaves the cutoff exactly where the knob says: middle C. With key
 // tracking, notes above it open the filter further and notes below close it.
 constexpr int keyTrackingReferenceNote = 60;
@@ -155,11 +149,8 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     filterResonance.setCurrentAndTargetValue (parameters.filterResonance.load() / 100.0f);
     filterMix.reset (sampleRate, filterSwitchSeconds);
     filterMix.setCurrentAndTargetValue (filterOn ? 1.0f : 0.0f);
-    filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
-                          Filter::resonanceToQ (filterResonance.getCurrentValue()));
     filterRunning = filterOn;
-    filterUpdateCountdown = 0;
-    lfoMovedCutoff = false;
+    forgetFilterSettings();
 
     const auto type = getCurrentFilterType();
 
@@ -238,7 +229,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     // way keeps the time it started with (see Envelope).
     ampEnvelope.setSettings (getAmpEnvelopeSettings());
     filterEnvelope.setSettings (getFilterEnvelopeSettings());
-    updateFilterTargets (startSample);
+    updateFilterTargets();
 
     for (int i = startSample; i < startSample + numSamples; ++i)
     {
@@ -309,7 +300,7 @@ void SynthVoice::renderFadingNote (std::optional<FadingNote>& slot, juce::AudioB
     }
 }
 
-void SynthVoice::updateFilterTargets (int startSample)
+void SynthVoice::updateFilterTargets()
 {
     const auto filterOn = parameters.filterEnabled.load() >= 0.5f;
     filterCutoff.setTargetValue (getFilterCutoffTarget());
@@ -333,8 +324,6 @@ void SynthVoice::updateFilterTargets (int startSample)
             amount.setCurrentAndTargetValue (amount.getTargetValue());
 
         filterEnvAmount.setCurrentAndTargetValue (filterEnvAmount.getTargetValue());
-        filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
-                              Filter::resonanceToQ (filterResonance.getCurrentValue()));
         filterRunning = true;
     }
 
@@ -342,17 +331,14 @@ void SynthVoice::updateFilterTargets (int startSample)
     if (! filterOn && filterRunning && ! filterMix.isSmoothing() && filterMix.getCurrentValue() == 0.0f)
         filterRunning = false;
 
-    // applyFilter keeps the coefficients up to date while anything moves the cutoff or resonance. If
-    // a change took effect without a glide, bring them up to date here instead. Only when nothing is
-    // moving, though: block boundaries depend on the host, and the output mustn't.
-    const auto filterEnvelopeHasEffect = filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f;
-
-    if (filterRunning && ! filterCutoff.isSmoothing() && ! filterResonance.isSmoothing() && ! filterEnvelopeHasEffect
-        && ! modulation.movesCutoff (startSample))
-        filter.setCutoffAndQ (movedCutoff (filterCutoff.getCurrentValue(), filterEnvAmount.getCurrentValue() * filterEnvelope.getLevel()),
-                              Filter::resonanceToQ (filterResonance.getCurrentValue()));
-
     filterMix.setTargetValue (filterOn ? 1.0f : 0.0f);
+}
+
+// So the next sample works out the filter's coefficients, whatever its settings: for a new note, as the
+// sample rate may have changed since the last.
+void SynthVoice::forgetFilterSettings() noexcept
+{
+    coefficientsCutoff = coefficientsOctaves = coefficientsResonance = std::numeric_limits<float>::quiet_NaN();
 }
 
 float SynthVoice::applyFilter (float input, float filterEnvelopeLevel, int sample) noexcept
@@ -362,34 +348,19 @@ float SynthVoice::applyFilter (float input, float filterEnvelopeLevel, int sampl
     if (! filterRunning)
         return input;
 
-    // The cutoff moves while its knob or resonance glides, or while the filter envelope or the LFO
-    // has any effect. Then the coefficients are worked out again every filterUpdateInterval samples,
-    // plus once more when everything stops, so the filter lands exactly on the final setting. The LFO
-    // can stop moving it on any sample, so that's caught here, on that sample, rather than at the
-    // next block: block boundaries depend on the host.
-    const auto lfoMovesCutoff = modulation.movesCutoff (sample);
-    const auto lfoStopped = lfoMovedCutoff && ! lfoMovesCutoff;
-    lfoMovedCutoff = lfoMovesCutoff;
+    // The cutoff and resonance, on every sample: their knobs gliding, and the filter envelope and the
+    // LFO moving the cutoff. The coefficients are worked out again whenever any of them changes, and only
+    // then, as that takes a tangent and a power.
+    const auto cutoff = filterCutoff.getNextValue();
+    const auto octaves = filterEnvAmount.getNextValue() * filterEnvelopeLevel + modulation.getCutoffOctaves (sample);
+    const auto resonance = filterResonance.getNextValue();
 
-    auto isMoving = [&]
+    if (cutoff != coefficientsCutoff || octaves != coefficientsOctaves || resonance != coefficientsResonance)
     {
-        return filterCutoff.isSmoothing() || filterResonance.isSmoothing()
-            || filterEnvAmount.isSmoothing() || filterEnvAmount.getTargetValue() != 0.0f
-            || lfoMovesCutoff;
-    };
-
-    if (isMoving() || lfoStopped)
-    {
-        const auto cutoff = filterCutoff.getNextValue();
-        const auto resonance = filterResonance.getNextValue();
-        const auto amount = filterEnvAmount.getNextValue();
-
-        if (--filterUpdateCountdown <= 0 || ! isMoving())
-        {
-            const auto octaves = amount * filterEnvelopeLevel + modulation.getCutoffOctaves (sample);
-            filter.setCutoffAndQ (movedCutoff (cutoff, octaves), Filter::resonanceToQ (resonance));
-            filterUpdateCountdown = filterUpdateInterval;
-        }
+        filter.setCutoffAndQ (movedCutoff (cutoff, octaves), Filter::resonanceToQ (resonance));
+        coefficientsCutoff = cutoff;
+        coefficientsOctaves = octaves;
+        coefficientsResonance = resonance;
     }
 
     const auto filtered = blendFilterTypes (filter.processAll (input),

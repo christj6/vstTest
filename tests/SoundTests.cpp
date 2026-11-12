@@ -995,6 +995,69 @@ void testCutoffChangeGlides()
     check (early > 2.0f * settled && std::abs (settled - 0.0204f) < 0.003f, "a cutoff change glides rather than jumping");
 }
 
+void testResonanceChangeReachesTheNote()
+{
+    // A saw with resonance raised mid-note, and nothing else moving: once its 20 ms glide is over, the
+    // note should be exactly what it would have been with that resonance all along.
+    const std::vector<TimedMessage> note { { 0, noteOn (45) } };
+    const auto raised = render ({ .events = note,
+                                  .setUp = withFilter (600.0f, 0.0f, saw),
+                                  .beforeEachBlock = [] (juce::AudioProcessor& p, int blockStart)
+                                  {
+                                      if (blockStart == changeSample)
+                                          setParameter (p, "filterResonance", 80.0f);
+                                  } });
+    const auto before = render ({ .events = note, .setUp = withFilter (600.0f, 0.0f, saw) });
+    const auto after = render ({ .events = note, .setUp = withFilter (600.0f, 80.0f, saw) });
+
+    // The filter's state carries the old resonance's ringing for a while, so this compares how loud the
+    // end is, rather than each sample.
+    const auto end = rmsBetween (raised, 40000, 48000);
+    std::printf ("      resonance raised mid-note: end at %.4f, against %.4f before and %.4f all along\n", end,
+                 rmsBetween (before, 40000, 48000), rmsBetween (after, 40000, 48000));
+    check (std::abs (end - rmsBetween (after, 40000, 48000)) < 1.0e-4 && std::abs (end - rmsBetween (before, 40000, 48000)) > 0.005,
+           "a resonance change reaches a note already playing");
+}
+
+void testNewSampleRateReachesTheFilter()
+{
+    // The same filtered note at 48 kHz, then, after the host changes the sample rate, at 44.1 kHz: the
+    // second note should be exactly what a plug-in started at 44.1 kHz plays.
+    std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+    withFilter (900.0f, 60.0f, saw) (*processor);
+
+    const auto playNote = [] (juce::AudioProcessor& p, double sampleRate)
+    {
+        p.prepareToPlay (sampleRate, 512);
+        juce::AudioBuffer<float> buffer (1, 512);
+        std::vector<float> output;
+
+        for (int block = 0; block < 20; ++block)
+        {
+            juce::MidiBuffer midi;
+
+            if (block == 0)
+                midi.addEvent (noteOn (45), 0);
+
+            if (block == 15)
+                midi.addEvent (noteOff (45), 0);
+
+            buffer.clear();
+            p.processBlock (buffer, midi);
+            output.insert (output.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 512);
+        }
+
+        return output;
+    };
+
+    playNote (*processor, 48000.0);
+    const auto afterChange = playNote (*processor, 44100.0);
+
+    std::unique_ptr<juce::AudioProcessor> fresh (createPluginFilter());
+    withFilter (900.0f, 60.0f, saw) (*fresh);
+    check (afterChange == playNote (*fresh, 44100.0), "after a change of sample rate, a note's filter is worked out for the new rate");
+}
+
 void testFilterSwitchCrossfades()
 {
     // A 2 kHz sine; the filter (at a 200 Hz cutoff) is switched on mid-note, and in another render
@@ -1107,6 +1170,8 @@ void runSoundTests()
     testFilterCutsHighHarmonics();
     testOpenFilterBarelyChanges();
     testCutoffChangeGlides();
+    testResonanceChangeReachesTheNote();
+    testNewSampleRateReachesTheFilter();
     testFilterSwitchCrossfades();
     testEachNoteStartsWithCleanFilter();
     testFilterBlockSizeIndependence();

@@ -33,9 +33,6 @@ public:
     // Moves a note's filter cutoff, in octaves.
     float getCutoffOctaves (int sample) const noexcept { return cutoffOctaves[index (sample)]; }
 
-    // Whether the LFO is moving the cutoff at all, even where it happens to be at 0 octaves.
-    bool movesCutoff (int sample) const noexcept { return cutoffMoving[index (sample)]; }
-
     // Moves a note's wavetable position, from -1 to 1 (the whole knob, either way).
     float getPositionOffset (int sample) const noexcept { return positionOffsets[index (sample)]; }
 
@@ -47,7 +44,6 @@ private:
     std::array<float, maxSamples> pitchRatios {};
     std::array<float, maxSamples> gains {};
     std::array<float, maxSamples> cutoffOctaves {};
-    std::array<bool, maxSamples> cutoffMoving {};
     std::array<float, maxSamples> positionOffsets {};
     int startSample = 0; // the output buffer position the arrays' first entries are for
 };

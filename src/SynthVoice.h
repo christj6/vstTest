@@ -149,8 +149,10 @@ private:
     // between the unfiltered and filtered sound (filterMix 0 to 1), so it doesn't click.
     Filter filter;
     bool filterRunning = false;
-    int filterUpdateCountdown = 0; // samples until the filter's coefficients are next worked out
-    bool lfoMovedCutoff = false;   // whether the LFO was moving the cutoff on the previous sample
+
+    // What the filter's coefficients were last worked out from: the cutoff knob, the octaves the envelope
+    // and the LFO moved it, and the resonance. NaN to work them out on the next sample whatever they are.
+    float coefficientsCutoff = 0.0f, coefficientsOctaves = 0.0f, coefficientsResonance = 0.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> filterCutoff { maxCutoffHz };
     juce::SmoothedValue<float> filterResonance; // 0 to 1
     juce::SmoothedValue<float> filterMix;
@@ -166,8 +168,9 @@ private:
 
     static void renderFadingNote (std::optional<FadingNote>& slot, juce::AudioBuffer<float>& buffer, int startSample,
                                   int numSamples);
-    void updateFilterTargets (int startSample);
+    void updateFilterTargets();
     float applyFilter (float input, float filterEnvelopeLevel, int sample) noexcept;
+    void forgetFilterSettings() noexcept;
     int getCurrentFilterType() const;
     float getFilterCutoffTarget() const;
     double getBendRatio() const;

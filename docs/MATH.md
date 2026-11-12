@@ -271,7 +271,7 @@ $$
 
 It stays stable at any cutoff and Q, even when they change every sample. All three outputs have a gain of exactly $Q$ at the cutoff: −3 dB with no resonance, up to +20 dB at full resonance. Low-pass and high-pass fall 12 dB per octave away from the cutoff, band-pass 6 dB per octave either side.
 
-**Cost.** The $\tan$ is the most expensive calculation in the plug-in. While the cutoff moves, the coefficients are worked out every 8 samples (0.17 ms at 48 kHz) rather than every sample, plus once more when it stops, so it always lands exactly. The steps are far too small and fast to hear.
+**Cost.** The $\tan$ is the most expensive calculation in the plug-in, so the coefficients are only worked out again on a sample where the cutoff or resonance has changed. While something sweeps the cutoff, that's every sample.
 
 ## 9. The LFO
 
