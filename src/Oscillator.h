@@ -18,14 +18,23 @@ public:
     explicit Oscillator (const MultiFrameWaveTable& waveTable) : table (&waveTable) {}
 
     // Switches to another waveform. With crossfadeSamples of 0 it switches at once, which is right
-    // when a note starts. Otherwise it fades from the old waveform to the new one over that many
-    // samples, reading both at the same phase, so a change during a note doesn't click.
+    // when a note starts, and ends any fade still under way, even to the same table: the table it was
+    // fading from mustn't be read again. Otherwise it fades from the old waveform to the new one over
+    // that many samples, reading both at the same phase, so a change during a note doesn't click.
     void setTable (const MultiFrameWaveTable& newTable, int crossfadeSamples) noexcept
     {
+        if (crossfadeSamples <= 0)
+        {
+            table = &newTable;
+            previousTable = nullptr;
+            fadeRemaining = 0;
+            return;
+        }
+
         if (&newTable == table)
             return;
 
-        previousTable = crossfadeSamples > 0 ? table : nullptr;
+        previousTable = table;
         table = &newTable;
         fadeLength = crossfadeSamples;
         fadeRemaining = crossfadeSamples;

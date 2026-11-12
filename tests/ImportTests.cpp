@@ -409,40 +409,109 @@ void waitForOldTables (const WavetableImporter& importer, int expected)
         juce::Thread::sleep (10);
 }
 
-void testOldTablesWaitForTheAudio()
+void testOldTablesKeptWhileInUse()
 {
-    // A replaced table may still be read for up to 15 ms of audio, by fades, from the block that may
-    // already be under way. So it's kept until two whole blocks and 20000 samples have passed.
-    WavetableImporter importer;
-    const WavFile file ({ makeFrame (sineShape) });
-    const auto load = [&]
+    // A replaced table is kept for as long as anything might read it, however long that is: here, a note
+    // held on it, and the audio not having picked up the newer one. Once neither holds, it's freed.
+    std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+    auto& importer = asSynth (*processor).getWavetableImporter();
+    setParameter (*processor, "waveform", (float) imported);
+    setParameter (*processor, "ampRelease", 0.01f);
+    processor->prepareToPlay (testSampleRate, 512);
+
+    juce::AudioBuffer<float> buffer (1, 512);
+    const auto play = [&] (int numBlocks, std::optional<juce::MidiMessage> message = std::nullopt)
     {
-        importer.import (file.file());
-        waitForImport (importer);
+        for (int block = 0; block < numBlocks; ++block)
+        {
+            juce::MidiBuffer midi;
+
+            if (block == 0 && message.has_value())
+                midi.addEvent (*message, 0);
+
+            buffer.clear();
+            processor->processBlock (buffer, midi);
+        }
     };
 
-    load();
-    load();
-    juce::Thread::sleep (500);
-    check (importer.getNumOldTables() == 1, "with no audio running, a replaced table is kept");
+    const WavFile first ({ makeFrame (sineShape) }), second ({ makeFrame (thirdHarmonicShape) }), third ({ makeFrame (cosineShape) });
+    importAndWait (*processor, first.file());
+    play (4, noteOn (60));
 
-    importer.blockRendered (30000);
+    // The note fades to the new table, and holds on to the old one until the note's over: a minute of
+    // held note couldn't be safer than this.
+    importAndWait (*processor, second.file());
+    play (200);
     juce::Thread::sleep (500);
-    check (importer.getNumOldTables() == 1, "after one block, however long, it's still kept");
+    check (importer.getNumOldTables() == 1, "a replaced table is kept while a note that played it is still sounding");
 
-    importer.blockRendered (1);
+    play (10, noteOff (60));
     waitForOldTables (importer, 0);
-    check (importer.getNumOldTables() == 0, "after two blocks and enough samples, it's freed");
+    check (importer.getNumOldTables() == 0, "once the note's over, it's freed");
 
-    load();
-    importer.blockRendered (512);
-    importer.blockRendered (512);
+    // With no audio running, the newer table isn't picked up, so the one the audio has is kept.
+    importAndWait (*processor, third.file());
     juce::Thread::sleep (500);
-    check (importer.getNumOldTables() == 1, "after two short blocks, it's still kept");
+    check (importer.getNumOldTables() == 1, "with no audio running, the table the audio last had is kept");
 
-    importer.blockRendered (20000);
+    play (1);
     waitForOldTables (importer, 0);
-    check (importer.getNumOldTables() == 0, "once enough samples have passed too, it's freed");
+    check (importer.getNumOldTables() == 0, "once the audio has the newer one, the old one's freed");
+}
+
+void testStolenNoteKeepsItsTable()
+{
+    // A note on the old table, crossfading to a new one, is stolen: its fade-out still reads the old table,
+    // which nothing else holds by then. The audio pauses, long enough for the importer to free whatever it
+    // can, before the fade-out goes on. Were the old table freed, the fade would read freed memory.
+    std::unique_ptr<juce::AudioProcessor> processor (createPluginFilter());
+    auto& importer = asSynth (*processor).getWavetableImporter();
+    setParameter (*processor, "waveform", (float) imported);
+    processor->prepareToPlay (testSampleRate, 64);
+
+    const WavFile first ({ makeFrame (sineShape) }), second ({ makeFrame (thirdHarmonicShape) });
+    importAndWait (*processor, first.file());
+
+    juce::AudioBuffer<float> buffer (1, 64);
+    const auto play = [&] (juce::MidiBuffer midi)
+    {
+        buffer.clear();
+        processor->processBlock (buffer, midi);
+
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            if (! std::isfinite (buffer.getSample (0, i)) || std::abs (buffer.getSample (0, i)) > 1.0f)
+                return false;
+
+        return true;
+    };
+
+    // One note on the old table, in the middle of the range, so it's the one stolen.
+    juce::MidiBuffer midi;
+    midi.addEvent (noteOn (60), 0);
+    bool clean = play (midi);
+
+    // The new table arrives; in the same block, fifteen notes take the other voices, and a seventeenth
+    // steals the first while it's fading from the old table to the new one.
+    importAndWait (*processor, second.file());
+    midi.clear();
+
+    for (int i = 0; i < 15; ++i)
+        midi.addEvent (noteOn (i < 8 ? 40 + i : 70 + i), 1);
+
+    midi.addEvent (noteOn (62), 2);
+    clean = play (midi) && clean;
+
+    for (int block = 0; block < 10; ++block)
+    {
+        juce::Thread::sleep (block == 0 ? 600 : 0);
+        clean = play ({}) && clean;
+    }
+
+    check (clean, "a note stolen while fading from a replaced table keeps that table until it's faded out");
+
+    // Once it has, nothing holds the old table.
+    waitForOldTables (importer, 0);
+    check (importer.getNumOldTables() == 0, "and the old table's freed afterwards");
 }
 
 void testReplacingTablesWhilePlaying()
@@ -499,11 +568,19 @@ void testReplacingTablesWhilePlaying()
     check (importer.getGeneration() - generationAtStart == 40, "every table arrived");
     check (allFinite && largest <= 1.0f, "replacing tables while notes are being stolen and released stays clean");
 
-    // With the audio having moved on, everything old can go.
-    importer.blockRendered (20000);
-    importer.blockRendered (20000);
+    // Once every note's over, everything old can go.
+    juce::MidiBuffer allOff;
+    allOff.addEvent (controller (123, 0), 0);
+
+    for (int block = 0; block < 200; ++block)
+    {
+        buffer.clear();
+        processor->processBlock (buffer, allOff);
+        allOff.clear();
+    }
+
     waitForOldTables (importer, 0);
-    check (importer.getNumOldTables() == 0, "and every old table is freed");
+    check (importer.getNumOldTables() == 0, "and every old table is freed once nothing's playing");
 }
 
 void testEveryCopyHasItsOwn()
@@ -833,7 +910,8 @@ void runImportTests()
     testStartsAtZero();
     testNoteFadesIn();
     testReplacingATableCrossfades();
-    testOldTablesWaitForTheAudio();
+    testOldTablesKeptWhileInUse();
+    testStolenNoteKeepsItsTable();
     testReplacingTablesWhilePlaying();
     testEveryCopyHasItsOwn();
     testSavedWithTheProject();

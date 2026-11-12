@@ -6,15 +6,8 @@ namespace boringsynth
 namespace
 {
 
-// How many whole blocks must finish after a table's replaced before it's freed: the one that may already
-// have been under way, and one that started with the new table in place.
-constexpr juce::uint64 blocksBeforeFreeing = 2;
-
-// And how many samples: the fades that can still read the old table last 15 ms, and this is over 100 ms
-// at sample rates up to 192 kHz.
-constexpr juce::uint64 samplesBeforeFreeing = 20000;
-
-// How often to check whether an old table can be freed, in milliseconds.
+// While old tables are kept, how often to check whether they can be freed, in milliseconds. Only how soon
+// memory comes back depends on it; whether it's safe doesn't.
 constexpr int freeingCheckMs = 200;
 
 constexpr auto sineRms = 0.70710678f;
@@ -85,6 +78,14 @@ void matchFrame (std::vector<float>& frame)
 
 } // namespace
 
+ImportedTable::ImportedTable (std::vector<std::vector<float>> frames, const juce::String& fileName, int number)
+    : cycles (std::move (frames)),
+      table (cycles.empty() ? nullptr : std::make_unique<MultiFrameWaveTable> (cycles)),
+      name (fileName),
+      generation (number)
+{
+}
+
 WavetableImporter::WavetableImporter()
     : juce::Thread ("BoringSynth wavetable import")
 {
@@ -116,22 +117,33 @@ WavetableImporter::Status WavetableImporter::getStatus() const
     return status;
 }
 
-void WavetableImporter::readTable (const std::function<void (const MultiFrameWaveTable*)>& reader) const
+ImportedTable::Ptr WavetableImporter::getLatest() const
 {
     const juce::ScopedLock sl (lock);
-    reader (table.get());
+    return tables.empty() ? nullptr : tables.back();
 }
 
-void WavetableImporter::blockRendered (int numSamples) noexcept
+const MultiFrameWaveTable* WavetableImporter::getTable() const
 {
-    samplesRendered.fetch_add ((juce::uint64) numSamples, std::memory_order_relaxed);
-    blocksRendered.fetch_add (1, std::memory_order_relaxed);
+    const juce::ScopedLock sl (lock);
+    return tables.empty() ? nullptr : tables.back()->getTable();
+}
+
+void WavetableImporter::prepareForBlock() noexcept
+{
+    // Taking the reference here is safe: the importer won't free a table the audio thread hasn't moved
+    // past, and letting go of the old one isn't the last reference, as the importer still holds it.
+    if (auto* newest = waiting.exchange (nullptr))
+    {
+        audioTable = newest;
+        takenByAudio.store (newest->getGeneration());
+    }
 }
 
 int WavetableImporter::getNumOldTables() const
 {
     const juce::ScopedLock sl (lock);
-    return (int) oldTables.size();
+    return std::max (0, (int) tables.size() - 1);
 }
 
 void WavetableImporter::run()
@@ -148,7 +160,7 @@ void WavetableImporter::run()
         if (file != juce::File())
             loadFile (file);
 
-        freeOldTables();
+        freeUnusedTables();
 
         const auto anyWaiting = [this]
         {
@@ -157,7 +169,7 @@ void WavetableImporter::run()
             if (pendingFile == juce::File())
                 busy = false;
 
-            return ! oldTables.empty();
+            return tables.size() > 1;
         }();
 
         wait (anyWaiting ? freeingCheckMs : -1);
@@ -175,26 +187,27 @@ void WavetableImporter::loadFile (const juce::File& file)
         return;
     }
 
-    auto newTable = std::make_unique<MultiFrameWaveTable> (read.frames);
-    publish (std::move (newTable), std::move (read.frames), { file.getFileName(), {} });
+    publish (std::move (read.frames), { file.getFileName(), {} });
 }
 
-void WavetableImporter::publish (std::unique_ptr<MultiFrameWaveTable> newTable, std::vector<std::vector<float>> newCycles, const Status& newStatus)
+void WavetableImporter::publish (std::vector<std::vector<float>> frames, const Status& newStatus)
 {
+    // One at a time, so tables are numbered, and reach the audio thread, in the order they're made: a file
+    // can finish loading on the thread as a project loads on the message thread.
+    const juce::ScopedLock oneAtATime (publishLock);
+
+    // Built before the other lock, as it takes a while, and the window reads under that one.
+    ImportedTable::Ptr newest = new ImportedTable (std::move (frames), newStatus.fileName, generation.load() + 1);
+
     {
         const juce::ScopedLock sl (lock);
-
-        if (table != nullptr)
-            oldTables.push_back ({ std::move (table), blocksRendered.load(), samplesRendered.load() });
-
-        table = std::move (newTable);
-        cycles = std::move (newCycles);
-        current.store (table.get(), std::memory_order_release);
+        tables.push_back (newest);
         status = newStatus;
-        ++generation;
+        generation = newest->getGeneration();
+        waiting.store (newest.get());
     }
 
-    // The thread frees the old table, once it's safe.
+    // The thread frees old tables, once nothing's using them.
     if (! isThreadRunning())
         startThread();
 
@@ -204,15 +217,17 @@ void WavetableImporter::publish (std::unique_ptr<MultiFrameWaveTable> newTable, 
 void WavetableImporter::clear()
 {
     if (getTable() != nullptr)
-        publish (nullptr, {}, {});
+        publish ({}, {});
 }
 
 void WavetableImporter::writeTo (juce::ValueTree& state) const
 {
-    const juce::ScopedLock sl (lock);
+    const auto latest = getLatest();
 
-    if (table == nullptr)
+    if (latest == nullptr || latest->getTable() == nullptr)
         return;
+
+    const auto& cycles = latest->getCycles();
 
     // Each sample as a 32-bit float, little-endian whatever the computer, so a project moves between them.
     juce::MemoryBlock data (cycles.size() * (size_t) WaveTable::size * sizeof (juce::uint32));
@@ -229,7 +244,7 @@ void WavetableImporter::writeTo (juce::ValueTree& state) const
     }
 
     juce::ValueTree saved (stateChildId);
-    saved.setProperty ("name", status.fileName, nullptr);
+    saved.setProperty ("name", latest->getFileName(), nullptr);
     saved.setProperty ("frames", (int) cycles.size(), nullptr);
     saved.setProperty ("data", juce::Base64::toBase64 (data.getData(), data.getSize()), nullptr);
     state.appendChild (saved, nullptr);
@@ -258,7 +273,7 @@ void WavetableImporter::readFrom (const juce::ValueTree& state, IfNoneSaved ifNo
     if (! decoded || numFrames < 1 || numFrames > maxFrames || data.getSize() != (size_t) numFrames * WaveTable::size * sizeof (juce::uint32))
     {
         if (getTable() != nullptr)
-            publish (nullptr, {}, { {}, name + ": the wavetable saved here couldn't be read" });
+            publish ({}, { {}, name + ": the wavetable saved here couldn't be read" });
         else
         {
             const juce::ScopedLock sl (lock);
@@ -284,20 +299,24 @@ void WavetableImporter::readFrom (const juce::ValueTree& state, IfNoneSaved ifNo
     }
 
     // Built here, not on the thread, so it's ready before this returns.
-    auto newTable = std::make_unique<MultiFrameWaveTable> (frames);
-    publish (std::move (newTable), std::move (frames), { name, {} });
+    publish (std::move (frames), { name, {} });
 }
 
-void WavetableImporter::freeOldTables()
+// An old table can go once only the importer holds it, and the audio thread has picked up a newer one: so
+// it isn't waiting to be picked up, and the audio thread can't take a new reference to it. The newest is
+// always kept.
+void WavetableImporter::freeUnusedTables()
 {
     const juce::ScopedLock sl (lock);
-    const auto blocks = blocksRendered.load();
-    const auto samples = samplesRendered.load();
+    const auto audioHasMovedPast = takenByAudio.load();
 
-    oldTables.erase (std::remove_if (oldTables.begin(), oldTables.end(), [=] (const OldTable& old)
+    for (size_t i = 0; i + 1 < tables.size();)
     {
-        return blocks >= old.blocksWhenReplaced + blocksBeforeFreeing && samples >= old.samplesWhenReplaced + samplesBeforeFreeing;
-    }), oldTables.end());
+        if (tables[i]->getReferenceCount() == 1 && tables[i]->getGeneration() < audioHasMovedPast)
+            tables.erase (tables.begin() + (std::ptrdiff_t) i);
+        else
+            ++i;
+    }
 }
 
 WavetableImporter::Cycles WavetableImporter::readCycles (const juce::File& file)

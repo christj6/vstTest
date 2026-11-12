@@ -127,9 +127,9 @@ void BoringSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     synth.setTransport (readTransport (getPlayHead()));
+    wavetableImporter.prepareForBlock();
     synth.renderNextBlock (buffer, midi, 0, buffer.getNumSamples());
     publishPlayedPosition();
-    wavetableImporter.blockRendered (buffer.getNumSamples());
     volumeGain.setTargetValue (getVolumeGain());
     volumeGain.applyGain (buffer, buffer.getNumSamples());
     protectOutput (buffer);

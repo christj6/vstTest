@@ -59,10 +59,9 @@ void WavetableDisplay::readTable (int waveform, const std::function<void (const 
         return;
     }
 
-    wavetableImporter.readTable ([&] (const MultiFrameWaveTable* imported)
-    {
-        reader (imported != nullptr ? *imported : tables.get (waveform));
-    });
+    // Holding a reference while reading it keeps it from being freed.
+    const auto imported = wavetableImporter.getLatest();
+    reader (imported != nullptr && imported->getTable() != nullptr ? *imported->getTable() : tables.get (waveform));
 }
 
 float WavetableDisplay::getPeak (const MultiFrameWaveTable& table)

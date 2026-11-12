@@ -103,14 +103,12 @@ void SynthVoice::startNote (int midiNote, float velocity, juce::SynthesiserSound
     // Stay silent if the host hasn't given us a sample rate yet.
     if (sampleRate <= 0.0)
     {
-        clearCurrentNote();
-        phaseDelta = 0.0;
+        endNote();
         return;
     }
 
     oscillator.reset();
-    const auto& table = getCurrentTable();
-    oscillator.setTable (table, 0);
+    const auto& table = useCurrentTable (0);
     startFadeLength = juce::jmax (1, juce::roundToInt (startFadeSeconds * sampleRate));
     startFadeRemaining = table.startsAtZero() ? 0 : startFadeLength;
     startFadeGain = 1.0f;
@@ -205,11 +203,12 @@ void SynthVoice::stopNote (float, bool allowTailOff)
                                   phaseDelta * frequencyRatio.getCurrentValue() * lfoPitchRatio,
                                   noteLevel * ampEnvelope.getLevel() * lfoGain * startFadeGain,
                                   1.0f,
-                                  (float) (1.0 / (cutOffFadeSeconds * getSampleRate())) };
+                                  (float) (1.0 / (cutOffFadeSeconds * getSampleRate())),
+                                  heldTable,
+                                  heldPreviousTable };
     }
 
-    clearCurrentNote();
-    phaseDelta = 0.0;
+    endNote();
 }
 
 void SynthVoice::pitchWheelMoved (int newPitchWheelValue)
@@ -230,7 +229,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
     frequencyRatio.setTargetValue (getBendRatio());
 
     // A change of waveform during the note fades in rather than switching abruptly.
-    oscillator.setTable (getCurrentTable(), juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
+    useCurrentTable (juce::roundToInt (waveformCrossfadeSeconds * getSampleRate()));
     wavetablePosition.setTargetValue (parameters.wavetablePosition.load() / 100.0f);
     positionEnvAmount.setTargetValue (parameters.positionEnvAmount.load() / 100.0f);
     positionEnvelope.setSettings (getPositionEnvelopeSettings());
@@ -270,8 +269,7 @@ void SynthVoice::renderNextBlock (juce::AudioBuffer<float>& buffer, int startSam
 
         if (! ampEnvelope.isActive())
         {
-            clearCurrentNote();
-            phaseDelta = 0.0;
+            endNote();
             break;
         }
     }
@@ -433,15 +431,33 @@ double SynthVoice::getBendRatio() const
     return std::exp2 (bendPosition * parameters.pitchBendRange.load() / 12.0);
 }
 
-const MultiFrameWaveTable& SynthVoice::getCurrentTable() const
+// Points the oscillator at the current waveform's table, fading from the one it was reading over this many
+// samples (or at once, for 0), and holds a reference to an imported table for as long as it may be read.
+const MultiFrameWaveTable& SynthVoice::useCurrentTable (int crossfadeSamples)
 {
     const auto waveform = juce::roundToInt (parameters.waveform.load());
+    const auto& imported = wavetableImporter.getAudioTable();
+    const auto useImported = waveform == importedWaveform && imported != nullptr && imported->getTable() != nullptr;
+    const auto& table = useImported ? *imported->getTable() : tables.get (waveform);
+    auto* toHold = useImported ? imported.get() : nullptr;
 
-    if (waveform == importedWaveform)
-        if (const auto* imported = wavetableImporter.getTable())
-            return *imported;
+    if (crossfadeSamples <= 0)
+        heldPreviousTable = nullptr;
+    else if (toHold != heldTable.get())
+        heldPreviousTable = heldTable;
 
-    return tables.get (waveform);
+    heldTable = toHold;
+    oscillator.setTable (table, crossfadeSamples);
+    return table;
+}
+
+// The note's over: the voice is free, and lets go of the tables it held.
+void SynthVoice::endNote()
+{
+    clearCurrentNote();
+    phaseDelta = 0.0;
+    heldTable = nullptr;
+    heldPreviousTable = nullptr;
 }
 
 Envelope::Settings SynthVoice::getAmpEnvelopeSettings() const

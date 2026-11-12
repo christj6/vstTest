@@ -101,6 +101,7 @@ private:
         float level;         // its level when it was cut off
         float gain;          // the fade, from 1 down to 0
         float gainStep;
+        ImportedTable::Ptr heldTable, heldPreviousTable; // the voice's, as its oscillator may read them
     };
 
     const WaveformTables& tables;
@@ -110,6 +111,11 @@ private:
     Oscillator oscillator;
     juce::SmoothedValue<float> wavetablePosition; // the knob, 0 to 1
     float lastPosition = 0.0f; // where the note last read, all included, for a note that's cut off
+
+    // References to the imported tables the oscillator may be reading, so they aren't freed under it: the
+    // one it's playing, and the one it may still be fading from. Null for built-in tables. Let go of when
+    // the note ends; the importer, holding them too, frees them, never this.
+    ImportedTable::Ptr heldTable, heldPreviousTable;
 
     // Moves the position up (or down) by positionEnvAmount at its peak. The envelope itself isn't
     // smoothed, so fast sweeps stay sharp; only the amount knob glides.
@@ -165,7 +171,8 @@ private:
     int getCurrentFilterType() const;
     float getFilterCutoffTarget() const;
     double getBendRatio() const;
-    const MultiFrameWaveTable& getCurrentTable() const;
+    const MultiFrameWaveTable& useCurrentTable (int crossfadeSamples);
+    void endNote();
     Envelope::Settings getAmpEnvelopeSettings() const;
     Envelope::Settings getFilterEnvelopeSettings() const;
     Envelope::Settings getPositionEnvelopeSettings() const;

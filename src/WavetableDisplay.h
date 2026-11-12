@@ -51,7 +51,8 @@ private:
 
     void timerCallback() override { refresh(); }
 
-    // Calls reader with the table for a waveform, keeping an imported one safe for as long as it takes.
+    // Calls reader with the table for a waveform, holding a reference to an imported one for as long as it
+    // takes, so it can't be freed part-way through.
     void readTable (int waveform, const std::function<void (const MultiFrameWaveTable&)>& reader) const;
     void drawTable (juce::Graphics& g, const MultiFrameWaveTable& table) const;
 

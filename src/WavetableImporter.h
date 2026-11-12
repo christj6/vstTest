@@ -6,21 +6,48 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <vector>
 
 namespace boringsynth
 {
 
+// One loaded wavetable, never changed once built, with the frames it was built from (for saving) and the
+// name of its file. Shared, by reference count, between the importer, the voices playing it and the window
+// drawing it. One with no frames stands for having no table loaded.
+class ImportedTable  : public juce::ReferenceCountedObject
+{
+public:
+    using Ptr = juce::ReferenceCountedObjectPtr<ImportedTable>;
+
+    ImportedTable (std::vector<std::vector<float>> frames, const juce::String& fileName, int number);
+
+    // Null for one standing for no table.
+    const MultiFrameWaveTable* getTable() const noexcept { return table.get(); }
+
+    const std::vector<std::vector<float>>& getCycles() const noexcept { return cycles; }
+    const juce::String& getFileName() const noexcept { return name; }
+
+    // Each table loaded gets the next number, starting from 1.
+    int getGeneration() const noexcept { return generation; }
+
+private:
+    std::vector<std::vector<float>> cycles;
+    std::unique_ptr<MultiFrameWaveTable> table;
+    juce::String name;
+    int generation;
+};
+
 // Loads a wavetable from a file for the Imported waveform, on a thread of its own, as reading a file and
 // band-limiting its frames takes far too long for anywhere else. Each copy of the plug-in has its own.
 //
-// The audio thread only ever reads one atomic pointer (getTable), so it never waits or allocates. A new
-// table replaces the old one by swapping that pointer. Voices move to the new table at their next block,
-// fading from the old one for 10 ms, and a note cut off fades for another 5 ms still reading it. So the
-// old table is kept until the audio has rendered two more whole blocks, and far more samples than those
-// fades take at any sample rate, and only then freed, on this thread. If audio stops, it waits.
+// Handing a table to the audio thread, and freeing it later, is the usual reference-counted "release
+// pool": the importer keeps a reference to every table that might still be in use, so whoever else lets
+// go of one, the audio thread included, is never the last, and nothing is ever freed on the audio thread.
+// The audio thread picks up the newest table at the start of each block (prepareForBlock), without
+// waiting or allocating. Voices hold references to the tables they're reading, crossfades and notes
+// fading out included. The importer frees a table once nothing but itself holds it, and the audio thread
+// has moved on to a newer one, so can't pick it up again. Nothing depends on how long anything takes.
 //
 // A file's channels are mixed to one. A whole number of 2048-sample frames, up to 256, is split into those
 // frames. Anything else up to 8192 samples is one cycle, resampled to 2048 samples. Each frame has its DC
@@ -51,21 +78,23 @@ public:
 
     Status getStatus() const;
 
-    // The loaded table, or null. The table is only safe to read on the audio thread, for as long as
-    // explained above; anywhere else, use readTable.
-    const MultiFrameWaveTable* getTable() const noexcept { return current.load (std::memory_order_acquire); }
+    // The newest table loaded (or null), for anything but the audio thread: keep the reference for as long
+    // as you read it.
+    ImportedTable::Ptr getLatest() const;
 
-    // Calls reader with the loaded table, or null, keeping it safe for as long as reader takes. Not on
-    // the audio thread.
-    void readTable (const std::function<void (const MultiFrameWaveTable*)>& reader) const;
+    // The newest table's wavetable, or null. Not on the audio thread; it stays valid until another loads.
+    const MultiFrameWaveTable* getTable() const;
 
-    // Goes up by one each time a new table's loaded.
+    // Goes up by one each time a new table's loaded, or the table's cleared.
     int getGeneration() const noexcept { return generation.load(); }
 
-    // The audio thread calls this after each block, so old tables can be freed once it's safe.
-    void blockRendered (int numSamples) noexcept;
+    // The audio thread calls this at the start of each block, to pick up a newly loaded table.
+    void prepareForBlock() noexcept;
 
-    // How many old tables are still waiting to be freed.
+    // The table the audio thread is using (or null). Only on the audio thread.
+    const ImportedTable::Ptr& getAudioTable() const noexcept { return audioTable; }
+
+    // How many tables other than the newest are still kept, as something might still be reading them.
     int getNumOldTables() const;
 
     // The loaded table is saved with projects and presets, embedded: a child of the saved state named
@@ -93,32 +122,29 @@ public:
     static Cycles readCycles (const juce::File& file);
 
 private:
-    struct OldTable
-    {
-        std::unique_ptr<MultiFrameWaveTable> table;
-        juce::uint64 blocksWhenReplaced;
-        juce::uint64 samplesWhenReplaced;
-    };
-
-    juce::CriticalSection lock; // never taken on the audio thread
+    juce::CriticalSection lock;        // never taken on the audio thread
+    juce::CriticalSection publishLock; // nor this, held while a new table's made
     juce::File pendingFile;
     Status status;
-    std::unique_ptr<MultiFrameWaveTable> table;
-    std::vector<std::vector<float>> cycles; // the table's frames, as processed, for saving
-    std::vector<OldTable> oldTables;
 
-    std::atomic<const MultiFrameWaveTable*> current { nullptr };
+    // Every table that might still be in use, oldest first: the last is the newest.
+    std::vector<ImportedTable::Ptr> tables;
+
+    // The newest table, until the audio thread picks it up, and the generation of the last one it did.
+    std::atomic<ImportedTable*> waiting { nullptr };
+    std::atomic<int> takenByAudio { 0 };
+
     std::atomic<int> generation { 0 };
     std::atomic<bool> busy { false };
-    std::atomic<juce::uint64> blocksRendered { 0 };
-    std::atomic<juce::uint64> samplesRendered { 0 };
+
+    ImportedTable::Ptr audioTable; // only touched on the audio thread
 
     void run() override;
     void loadFile (const juce::File& file);
-    void freeOldTables();
+    void freeUnusedTables();
 
-    // Hands the audio thread a new table (or none), keeping the old one to free later.
-    void publish (std::unique_ptr<MultiFrameWaveTable> newTable, std::vector<std::vector<float>> newCycles, const Status& newStatus);
+    // Adds a new table (or one standing for none), and hands it to the audio thread.
+    void publish (std::vector<std::vector<float>> frames, const Status& newStatus);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WavetableImporter)
 };

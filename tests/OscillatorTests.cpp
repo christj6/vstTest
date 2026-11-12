@@ -423,6 +423,20 @@ void testCrossfadeBetweenTables()
 
     check (largestBlendError < 1.0e-6, "switching waveform blends the two over the crossfade");
     check (exactAfterFade, "after the crossfade the output is exactly the new waveform");
+
+    // Switching at once, even to the table it's already fading to, ends the fade there and then: the
+    // table it was fading from may be gone, as when a note ends part-way through and a new one starts.
+    boringsynth::Oscillator interrupted (saw), squareAlone (square);
+    interrupted.setTable (square, fadeLength);
+    interrupted.getNextSample (0.05);
+    squareAlone.getNextSample (0.05);
+    interrupted.setTable (square, 0);
+    bool exactAtOnce = true;
+
+    for (int i = 0; i < fadeLength; ++i)
+        exactAtOnce = exactAtOnce && interrupted.getNextSample (0.05) == squareAlone.getNextSample (0.05);
+
+    check (exactAtOnce, "switching at once ends a fade still under way, even to the same table");
 }
 
 //==============================================================================
