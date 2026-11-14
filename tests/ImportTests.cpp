@@ -802,7 +802,7 @@ void testWindowShowsTheReopenedTable()
     original->getStateInformation (state);
 
     auto* editor = other->createEditorAndMakeActive();
-    auto* status = editor != nullptr ? dynamic_cast<juce::Label*> (editor->findChildWithID ("wavetableStatus")) : nullptr;
+    auto* status = editor != nullptr ? dynamic_cast<juce::Label*> (findDescendant (*editor, "wavetableStatus")) : nullptr;
     other->setStateInformation (state.getData(), (int) state.getSize());
 
     // The window hears about it as a message, which a host's message loop would deliver.
@@ -829,9 +829,9 @@ void testLoadingFromTheWindow()
         return;
     }
 
-    auto* button = dynamic_cast<juce::Button*> (editor->findChildWithID ("loadWavetable"));
-    auto* status = dynamic_cast<juce::Label*> (editor->findChildWithID ("wavetableStatus"));
-    auto* display = dynamic_cast<boringsynth::WavetableDisplay*> (editor->findChildWithID ("wavetableDisplay"));
+    auto* button = dynamic_cast<juce::Button*> (findDescendant (*editor, "loadWavetable"));
+    auto* status = dynamic_cast<juce::Label*> (findDescendant (*editor, "wavetableStatus"));
+    auto* display = dynamic_cast<boringsynth::WavetableDisplay*> (findDescendant (*editor, "wavetableDisplay"));
     check (button != nullptr && status != nullptr && display != nullptr, "the window has a Load wavetable button, and text beside it");
 
     if (button != nullptr && status != nullptr && display != nullptr)
@@ -884,7 +884,7 @@ void testLoadingFromTheWindow()
         }
 
         editor = dynamic_cast<boringsynth::BoringSynthEditor*> (processor->createEditorAndMakeActive());
-        auto* reopenedStatus = dynamic_cast<juce::Label*> (editor->findChildWithID ("wavetableStatus"));
+        auto* reopenedStatus = dynamic_cast<juce::Label*> (findDescendant (*editor, "wavetableStatus"));
         check (reopenedStatus != nullptr && reopenedStatus->getText() == file.file().getFileName(), "a window opened later names the file loaded");
     }
 

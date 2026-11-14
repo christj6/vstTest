@@ -157,6 +157,28 @@ inline void setParameter (juce::AudioProcessor& processor, const juce::String& i
         check (false, ("parameter '" + id + "' exists").toRawUTF8());
 }
 
+// The component with this ID anywhere inside parent (the plug-in's window keeps its controls in a
+// component of their own), or null.
+inline juce::Component* findDescendant (juce::Component& parent, const juce::String& id)
+{
+    for (auto* child : parent.getChildren())
+    {
+        if (child->getComponentID() == id)
+            return child;
+
+        if (auto* found = findDescendant (*child, id))
+            return found;
+    }
+
+    return nullptr;
+}
+
+// Where a component inside a window is, in the window's own coordinates, as drawn: scaling included.
+inline juce::Rectangle<int> boundsInWindow (juce::Component& window, juce::Component& component)
+{
+    return window.getLocalArea (&component, component.getLocalBounds());
+}
+
 // Reads a parameter in its own units.
 inline float getParameter (juce::AudioProcessor& processor, const juce::String& id)
 {

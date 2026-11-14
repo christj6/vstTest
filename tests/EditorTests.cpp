@@ -71,7 +71,7 @@ struct OpenEditor
 
     ~OpenEditor() { closeEditor (*processor); }
 
-    juce::Component* control (const juce::String& parameterId) const { return editor->findChildWithID (parameterId); }
+    juce::Component* control (const juce::String& parameterId) const { return findDescendant (*editor, parameterId); }
 
     template <typename ControlType>
     ControlType* control (const juce::String& parameterId) const { return dynamic_cast<ControlType*> (control (parameterId)); }
@@ -89,10 +89,16 @@ void testEveryParameterHasAControl()
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
         const auto id = ranged->getParameterID();
         int found = 0;
+        std::function<void (juce::Component&)> count = [&] (juce::Component& parent)
+        {
+            for (auto* child : parent.getChildren())
+            {
+                found += child->getComponentID() == id ? 1 : 0;
+                count (*child);
+            }
+        };
 
-        for (auto* child : open.editor->getChildren())
-            if (child->getComponentID() == id)
-                ++found;
+        count (*open.editor);
 
         if (found != 1)
         {
@@ -466,11 +472,11 @@ void testControlsFitAndDontOverlap()
 
         for (size_t i = 0; i < controls.size(); ++i)
         {
-            const auto bounds = controls[i] != nullptr ? controls[i]->getBoundsInParent() : juce::Rectangle<int>();
+            const auto bounds = controls[i] != nullptr ? boundsInWindow (*open.editor, *controls[i]) : juce::Rectangle<int>();
             allInside = allInside && open.editor->getLocalBounds().contains (bounds) && ! bounds.isEmpty();
 
             for (size_t j = i + 1; j < controls.size(); ++j)
-                noneOverlap = noneOverlap && controls[j] != nullptr && ! bounds.intersects (controls[j]->getBoundsInParent());
+                noneOverlap = noneOverlap && controls[j] != nullptr && ! bounds.intersects (boundsInWindow (*open.editor, *controls[j]));
         }
     }
 
@@ -484,9 +490,21 @@ void testRowsLineUp()
     OpenEditor open;
     std::map<int, int> rowEnds; // each row's top, and where its last group ends
 
-    for (auto* child : open.editor->getChildren())
-        if (auto* group = dynamic_cast<juce::GroupComponent*> (child))
-            rowEnds[group->getY()] = std::max (rowEnds[group->getY()], group->getRight());
+    std::function<void (juce::Component&)> findGroups = [&] (juce::Component& parent)
+    {
+        for (auto* child : parent.getChildren())
+        {
+            if (auto* group = dynamic_cast<juce::GroupComponent*> (child))
+            {
+                const auto bounds = boundsInWindow (*open.editor, *group);
+                rowEnds[bounds.getY()] = std::max (rowEnds[bounds.getY()], bounds.getRight());
+            }
+
+            findGroups (*child);
+        }
+    };
+
+    findGroups (*open.editor);
 
     juce::String ends;
     bool lineUp = rowEnds.size() == 4;
@@ -507,7 +525,7 @@ void testWindowScales()
     // in it is drawn that much bigger or smaller.
     OpenEditor open;
     const auto normal = open.editor->getLocalBounds();
-    const auto knobAtNormal = open.control ("filterCutoff")->getBoundsInParent();
+    const auto knobAtNormal = boundsInWindow (*open.editor, *open.control ("filterCutoff"));
     auto* constrainer = open.editor->getConstrainer();
 
     auto dragTo = [&] (int width, int height)
@@ -517,7 +535,7 @@ void testWindowScales()
     };
 
     const auto largest = dragTo (normal.getWidth() * 5, normal.getHeight() * 5);
-    const auto knobAtLargest = open.control ("filterCutoff")->getBoundsInParent();
+    const auto knobAtLargest = boundsInWindow (*open.editor, *open.control ("filterCutoff"));
     const auto smallest = dragTo (normal.getWidth() / 5, normal.getHeight() / 5);
     const auto wider = dragTo (normal.getWidth() * 3 / 2, normal.getHeight());
 
@@ -610,8 +628,8 @@ void testPresetMenu()
     presets.dispatchPendingMessages();
 
     auto* editor = processor->createEditorAndMakeActive();
-    auto* menu = dynamic_cast<juce::ComboBox*> (editor->findChildWithID ("presetMenu"));
-    auto* save = editor->findChildWithID ("savePreset");
+    auto* menu = dynamic_cast<juce::ComboBox*> (findDescendant (*editor, "presetMenu"));
+    auto* save = findDescendant (*editor, "savePreset");
 
     if (menu == nullptr || save == nullptr)
     {

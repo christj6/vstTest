@@ -24,6 +24,8 @@ namespace boringsynth
 // The window can be resized from its corner, keeping its shape: everything is drawn bigger or
 // smaller, from 75 % to 200 %, rather than laid out differently. The project remembers the size.
 //
+// Everything is in one component, laid out once at the normal size, which resizing the window scales.
+//
 // Each control's component ID is its parameter's ID, so tests can find them; the preset menu's is
 // "presetMenu", the Save button's "savePreset", the picture's "wavetableDisplay", the Load wavetable
 // button's "loadWavetable", and the text beside it "wavetableStatus".
@@ -90,6 +92,11 @@ private:
     juce::AudioProcessorValueTreeState& parameters;
     PresetManager& presets;
     std::atomic<float>& scale;
+
+    // Everything in the window, laid out once at the normal size, and drawn scaled to fill it. Declared
+    // before the components in it, so it goes after them.
+    juce::Component content;
+
     std::vector<std::unique_ptr<Control>> controls;
     std::vector<Group> groups;
     WavetableDisplay wavetableDisplay;
@@ -117,6 +124,7 @@ private:
     std::unique_ptr<juce::ParameterAttachment> waveformAttachment;
 
     Control& addControl (const char* parameterId, const char* labelText);
+    void layOut();
     static int getCellWidth (const Control& control);
     static int getGroupWidth (const Group& group);
     int getRowWidth (int row) const;

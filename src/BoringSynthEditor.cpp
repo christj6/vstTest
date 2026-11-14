@@ -81,33 +81,33 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
       wavetableImporter (importer)
 {
     presetLabel.setText ("Preset", juce::dontSendNotification);
-    addAndMakeVisible (presetLabel);
+    content.addAndMakeVisible (presetLabel);
 
     presetMenu.setComponentID ("presetMenu");
     presetMenu.setTitle ("Preset");
     presetMenu.beforeShowing = [this] { refreshPresetMenu(); };
     presetMenu.onChange = [this] { presetChosen(); };
-    addAndMakeVisible (presetMenu);
+    content.addAndMakeVisible (presetMenu);
 
     saveButton.setComponentID ("savePreset");
     saveButton.onClick = [this] { askToSavePreset(); };
-    addAndMakeVisible (saveButton);
+    content.addAndMakeVisible (saveButton);
 
     refreshPresetMenu();
     presets.addChangeListener (this);
 
     loadWavetableButton.setComponentID ("loadWavetable");
     loadWavetableButton.onClick = [this] { chooseWavetable(); };
-    addAndMakeVisible (loadWavetableButton);
+    content.addAndMakeVisible (loadWavetableButton);
 
     wavetableStatus.setComponentID ("wavetableStatus");
-    addAndMakeVisible (wavetableStatus);
+    content.addAndMakeVisible (wavetableStatus);
     showWavetableStatus();
 
     for (const auto& layout : getLayout())
     {
         Group group { std::make_unique<juce::GroupComponent> (juce::String(), layout.title), {}, layout.row };
-        addAndMakeVisible (*group.box);
+        content.addAndMakeVisible (*group.box);
 
         for (const auto& [parameterId, labelText] : layout.controls)
             group.controls.push_back (&addControl (parameterId, labelText));
@@ -115,13 +115,16 @@ BoringSynthEditor::BoringSynthEditor (juce::AudioProcessor& processor, juce::Aud
         groups.push_back (std::move (group));
     }
 
-    addAndMakeVisible (wavetableDisplay);
+    content.addAndMakeVisible (wavetableDisplay);
 
     for (int row = 0; row < numRows; ++row)
         normalWidth = std::max (normalWidth, getRowWidth (row));
 
     normalWidth += gap;
     normalHeight = gap + presetBarHeight + gap + numRows * (groupHeight + gap);
+    content.setBounds (0, 0, normalWidth, normalHeight);
+    layOut();
+    addAndMakeVisible (content);
 
     if (auto* sync = parameters.getParameter (lfoSyncId))
     {
@@ -331,14 +334,14 @@ BoringSynthEditor::Control& BoringSynthEditor::addControl (const char* parameter
 
     control.component->setComponentID (parameterId);
     control.component->setTitle (parameter->getName (100));
-    addAndMakeVisible (*control.component);
+    content.addAndMakeVisible (*control.component);
 
     // A tick box shows its own text; knobs and menus get a label above them.
     if (control.buttonAttachment == nullptr)
     {
         control.label.setText (labelText, juce::dontSendNotification);
         control.label.setJustificationType (juce::Justification::centred);
-        addAndMakeVisible (control.label);
+        content.addAndMakeVisible (control.label);
     }
 
     return control;
@@ -367,18 +370,18 @@ void BoringSynthEditor::paint (juce::Graphics& g)
     g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
 }
 
+// Everything is laid out at the normal size, then drawn scaled up or down to fill the window.
 void BoringSynthEditor::resized()
 {
-    // Everything is laid out at the normal size, then drawn scaled up or down to fill the window.
     const auto windowScale = (float) getWidth() / (float) normalWidth;
-    const auto transform = juce::AffineTransform::scale (windowScale);
+    content.setTransform (juce::AffineTransform::scale (windowScale));
     scale = windowScale;
+}
 
-    auto place = [&transform] (juce::Component& component, juce::Rectangle<int> bounds)
-    {
-        component.setTransform (transform);
-        component.setBounds (bounds);
-    };
+// Once, when the window opens, at the normal size.
+void BoringSynthEditor::layOut()
+{
+    auto place = [] (juce::Component& component, juce::Rectangle<int> bounds) { component.setBounds (bounds); };
 
     auto presetBar = juce::Rectangle<int> (gap, gap, normalWidth - 2 * gap, presetBarHeight);
     place (presetLabel, presetBar.removeFromLeft (presetLabelWidth));
