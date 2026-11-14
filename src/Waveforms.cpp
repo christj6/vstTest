@@ -57,7 +57,7 @@ WaveformTables::WaveformTables()
     for (int waveform = 0; waveform < firstWavetable; ++waveform)
     {
         const auto gain = waveformGain (waveform);
-        tables.emplace_back ([waveform, gain] (double phase) { return gain * waveformShape (waveform, phase); });
+        tables.emplace_back (std::vector<std::vector<float>> { sampleCycle ([waveform, gain] (double phase) { return gain * waveformShape (waveform, phase); }) });
     }
 
     for (auto& wavetable : makeWavetables())

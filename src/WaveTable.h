@@ -8,6 +8,10 @@
 namespace boringsynth
 {
 
+// One cycle of a shape, as WaveTable::size samples: shape's value at each sample's phase, from 0 up to
+// (but not including) 2 pi. Every table is built from samples like these.
+std::vector<float> sampleCycle (const std::function<float (double phase)>& shape);
+
 // One cycle of a waveform, stored as evenly spaced samples. Reading between two samples blends
 // them (linear interpolation), so the table can be read at any phase.
 //
@@ -19,10 +23,6 @@ public:
     // Samples per cycle. With linear interpolation, a sine read from 2048 samples is within about
     // 1.2e-6 of a true sine (about -118 dB below full scale), far below anything audible.
     static constexpr int size = 2048;
-
-    // Fills the table by calling shape at each sample's phase, from 0 up to (but not including)
-    // 2 pi. shape returns the waveform's value at that phase, from -1 to 1.
-    explicit WaveTable (const std::function<float (double phase)>& shape);
 
     // Uses `cycle` as the table: exactly `size` samples covering one cycle.
     explicit WaveTable (const std::vector<float>& cycle);

@@ -22,8 +22,8 @@ public:
     // down to the last, which keeps only the fundamental.
     static constexpr int numLevels = 11;
 
-    // Builds every level from one cycle of `shape` (see WaveTable).
-    explicit BandLimitedWaveTable (const std::function<float (double phase)>& shape);
+    // Builds every level from one cycle, exactly WaveTable::size samples (see sampleCycle).
+    explicit BandLimitedWaveTable (const std::vector<float>& cycle);
 
     // The richest level with no harmonics at or above the Nyquist frequency, for a note whose phase
     // moves by phaseDelta radians per sample (2 pi times the frequency divided by the sample rate).

@@ -27,19 +27,25 @@ float sawtooth (double phase) { return (float) (phase / juce::MathConstants<doub
 
 const boringsynth::WaveTable& plainSineTable()
 {
-    static const boringsynth::WaveTable table { sine };
+    static const boringsynth::WaveTable table { boringsynth::sampleCycle (sine) };
     return table;
+}
+
+// A table of one frame, of a shape.
+boringsynth::MultiFrameWaveTable oneFrameOf (float (*shape) (double))
+{
+    return boringsynth::MultiFrameWaveTable (std::vector<std::vector<float>> { boringsynth::sampleCycle (shape) });
 }
 
 const boringsynth::MultiFrameWaveTable& sineTable()
 {
-    static const boringsynth::MultiFrameWaveTable table { sine };
+    static const auto table = oneFrameOf (sine);
     return table;
 }
 
 const boringsynth::MultiFrameWaveTable& sawtoothTable()
 {
-    static const boringsynth::MultiFrameWaveTable table { sawtooth };
+    static const auto table = oneFrameOf (sawtooth);
     return table;
 }
 
@@ -449,7 +455,10 @@ float threeFrameShape (int frame, double phase)
 
 const boringsynth::MultiFrameWaveTable& threeFrameTable()
 {
-    static const boringsynth::MultiFrameWaveTable table { 3, threeFrameShape };
+    static const boringsynth::MultiFrameWaveTable table (std::vector<std::vector<float>> {
+        boringsynth::sampleCycle ([] (double phase) { return threeFrameShape (0, phase); }),
+        boringsynth::sampleCycle ([] (double phase) { return threeFrameShape (1, phase); }),
+        boringsynth::sampleCycle ([] (double phase) { return threeFrameShape (2, phase); }) });
     return table;
 }
 
@@ -472,7 +481,7 @@ void testFramesAreBandLimitedSeparately()
 
     for (int frame = 0; frame < 3; ++frame)
     {
-        const boringsynth::BandLimitedWaveTable alone { [frame] (double phase) { return threeFrameShape (frame, phase); } };
+        const boringsynth::BandLimitedWaveTable alone { boringsynth::sampleCycle ([frame] (double phase) { return threeFrameShape (frame, phase); }) };
         allSame = allSame && sameLevels (threeFrameTable().getFrame (frame), alone);
     }
 
@@ -484,7 +493,7 @@ void testFramesAreBandLimitedSeparately()
 
 void testSingleFrameTable()
 {
-    const boringsynth::BandLimitedWaveTable alone { sawtooth };
+    const boringsynth::BandLimitedWaveTable alone { boringsynth::sampleCycle (sawtooth) };
     check (sawtoothTable().getNumFrames() == 1, "a table made from one shape has one frame");
     check (sameLevels (sawtoothTable().getFrame (0), alone), "its frame is that shape, band-limited");
 }

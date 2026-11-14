@@ -13,19 +13,20 @@ static_assert ((1 << fftOrder) == WaveTable::size, "the FFT must be the same siz
 
 } // namespace
 
-BandLimitedWaveTable::BandLimitedWaveTable (const std::function<float (double phase)>& shape)
+BandLimitedWaveTable::BandLimitedWaveTable (const std::vector<float>& cycle)
 {
     constexpr auto size = WaveTable::size;
+    jassert ((int) cycle.size() == size);
     const juce::dsp::FFT fft (fftOrder);
 
     // Split one cycle of the waveform into its harmonics. Bin k of the spectrum is harmonic k, and
     // bin size - k is its mirror image, which a real waveform needs as well.
-    std::vector<juce::dsp::Complex<float>> cycle ((size_t) size), spectrum ((size_t) size);
+    std::vector<juce::dsp::Complex<float>> complexCycle ((size_t) size), spectrum ((size_t) size);
 
     for (int i = 0; i < size; ++i)
-        cycle[(size_t) i] = shape (juce::MathConstants<double>::twoPi * i / size);
+        complexCycle[(size_t) i] = cycle[(size_t) i];
 
-    fft.perform (cycle.data(), spectrum.data(), false);
+    fft.perform (complexCycle.data(), spectrum.data(), false);
 
     std::vector<juce::dsp::Complex<float>> limitedSpectrum ((size_t) size), limitedCycle ((size_t) size);
     std::vector<float> samples ((size_t) size);

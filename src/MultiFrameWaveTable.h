@@ -14,13 +14,7 @@ namespace boringsynth
 class MultiFrameWaveTable
 {
 public:
-    // A single frame: a waveform that never changes.
-    explicit MultiFrameWaveTable (const std::function<float (double phase)>& shape);
-
-    // numFrames frames, at least one, where shape gives each frame's value at a phase (see WaveTable).
-    MultiFrameWaveTable (int numFrames, const std::function<float (int frame, double phase)>& shape);
-
-    // A frame for each of cycles, each exactly WaveTable::size samples.
+    // A frame for each of cycles, at least one, each exactly WaveTable::size samples (see sampleCycle).
     explicit MultiFrameWaveTable (const std::vector<std::vector<float>>& cycles);
 
     int getNumFrames() const noexcept { return (int) frames.size(); }
